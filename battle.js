@@ -1,6 +1,6 @@
 /**
  * battle.js - キャラ計算 & ロジック
- * 役職パッシブ / 前衛・後衛 / 連携攻撃(CROSS ATTACK) / トラッパー / ダメージ計算整数化
+ * 5役職パッシブ / 前衛・後衛 / 全発動条件プログラム化 / 時止め・先制 / ダメージ計算整数化
  */
 
 if (typeof window.appState === 'undefined') {
@@ -15,44 +15,50 @@ const MAX_TOTAL_POINTS = 200;
 const MAX_EVA_POINTS = 150;
 
 /* ===================================================
-   役職（ジョブ）パッシブ定義
+   役職（ジョブ）パッシブ定義 — 王道5役職
    =================================================== */
 const ROLES = {
   'melee': {
     label: '近接物理',
     icon: '⚔️',
     desc: 'HP・攻撃力 1.2倍。最前線で戦う物理アタッカー。',
-    passive: 'HP・攻撃力1.2倍'
+    passive: 'HP・攻撃力1.2倍',
+    canAttack: true,
+    canUseSkill: true
   },
   'ranged': {
     label: '遠距離物理',
     icon: '🏹',
-    desc: '必殺ダメージ倍率2.0倍。狙われにくいが、攻撃成功率70%。',
-    passive: '必殺2.0倍 / 狙われにくい / 攻撃成功率70%'
+    desc: '必殺ダメージ倍率2.5倍（通常1.5倍）。狙われにくい。',
+    passive: '必殺2.5倍 / 狙われにくい',
+    canAttack: true,
+    canUseSkill: true
   },
   'mage': {
     label: '魔術師',
     icon: '🔮',
-    desc: '相手の防御力を50%無視（貫通）してダメージ計算。',
-    passive: '防御50%貫通'
+    desc: '敵の防御力を50%貫通してダメージ計算。',
+    passive: '防御50%貫通',
+    canAttack: true,
+    canUseSkill: true
   },
   'healer': {
     label: 'ヒーラー',
     icon: '💚',
-    desc: '通常攻撃不可。攻撃ステータスを回復力とし、回復量1.2倍。4ターンに1回自動回復。',
-    passive: '回復量1.2倍 / 4Tに1回自動回復'
+    desc: '通常攻撃不可。素早さ0固定。攻撃ステータスが回復力(1.4倍)。4ターンに1回自動全体回復。技名・必殺技名入力不可。',
+    passive: '回復量1.4倍 / 4Tに1回自動全体回復 / SPD固定0',
+    canAttack: false,
+    canUseSkill: true,
+    fixedSpd: 0,
+    lockSkillNames: true
   },
   'tank': {
     label: 'タンク',
     icon: '🛡️',
     desc: 'HP・防御力 1.2倍。狙われやすさ大幅上昇。',
-    passive: 'HP・防御力1.2倍 / 狙われやすい'
-  },
-  'trapper': {
-    label: 'トラッパー',
-    icon: '🪤',
-    desc: '必殺発動なし。攻撃選択でトラップ設置、3T後に40%確率で発動(攻撃力×2.5倍)。',
-    passive: 'トラップ設置 / 3T後40%発動 / 攻撃力×2.5倍'
+    passive: 'HP・防御力1.2倍 / 狙われやすい',
+    canAttack: true,
+    canUseSkill: true
   }
 };
 
@@ -64,7 +70,7 @@ function getRoleLabel(roleKey) {
 }
 
 /* ===================================================
-   初期化・ステータス入力
+   ステータス初期化
    =================================================== */
 function initStatSliders(prefix = '') {
   const isEdit = prefix === 'edit';
@@ -84,12 +90,26 @@ function updateStatValues(prefix = '') {
   let def = parseInt(document.getElementById(`${p}stat-def`)?.value) || 0;
   let eva = parseInt(document.getElementById(`${p}stat-eva`)?.value) || 0;
 
-  if (eva > MAX_EVA_POINTS) {
-    eva = MAX_EVA_POINTS;
+  const roleEl = document.getElementById(`${p}char-role`);
+  const roleKey = roleEl ? roleEl.value : 'melee';
+  const roleDef = ROLES[roleKey];
+
+  if (roleDef && roleDef.fixedSpd !== undefined) {
+    eva = roleDef.fixedSpd;
     const slider = document.getElementById(`${p}stat-eva`);
     const numInput = document.getElementById(`${p}num-stat-eva`);
-    if (slider) slider.value = MAX_EVA_POINTS;
-    if (numInput) numInput.value = MAX_EVA_POINTS;
+    if (slider) { slider.value = 0; slider.disabled = true; }
+    if (numInput) { numInput.value = 0; numInput.disabled = true; }
+  } else {
+    const slider = document.getElementById(`${p}stat-eva`);
+    const numInput = document.getElementById(`${p}num-stat-eva`);
+    if (slider) slider.disabled = false;
+    if (numInput) numInput.disabled = false;
+    if (eva > MAX_EVA_POINTS) {
+      eva = MAX_EVA_POINTS;
+      if (slider) slider.value = MAX_EVA_POINTS;
+      if (numInput) numInput.value = MAX_EVA_POINTS;
+    }
   }
 
   const currentTotal = hp + atk + def + eva;
@@ -107,21 +127,19 @@ function updateStatValues(prefix = '') {
   const valEva = document.getElementById(`${p}val-eva`);
 
   if (valHp) valHp.textContent = `${hp * 5} HP (${hp} pt)`;
-  if (valAtk) valAtk.textContent = `${atk} pt`;
+  if (valAtk) valAtk.textContent = roleKey === 'healer' ? `${atk} pt (回復力)` : `${atk} pt`;
   if (valDef) valDef.textContent = `${def} pt`;
   if (valEva) valEva.textContent = `SPD:${eva}pt / 回避:${Math.floor(eva / 3)}%`;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  initStatSliders('create');
-  initStatSliders('edit');
   loadLocalCharacters();
   if (typeof renderCharacterGallery === 'function') renderCharacterGallery();
-  if (typeof renderTeamChecklists === 'function') renderTeamChecklists();
+  if (typeof renderTeamSlots === 'function') renderTeamSlots();
 });
 
 /* ===================================================
-   キャラクター作成・編集・削除
+   キャラクター作成
    =================================================== */
 async function handleCreateCharacter(e) {
   e.preventDefault();
@@ -131,7 +149,15 @@ async function handleCreateCharacter(e) {
   const def = parseInt(document.getElementById('stat-def').value) || 0;
   let eva = parseInt(document.getElementById('stat-eva').value) || 0;
 
-  if (eva > MAX_EVA_POINTS) eva = MAX_EVA_POINTS;
+  const roleEl = document.getElementById('char-role');
+  const roleKey = roleEl ? roleEl.value : 'melee';
+  const roleDef = ROLES[roleKey];
+
+  if (roleDef && roleDef.fixedSpd !== undefined) {
+    eva = roleDef.fixedSpd;
+  } else if (eva > MAX_EVA_POINTS) {
+    eva = MAX_EVA_POINTS;
+  }
 
   if (hp + atk + def + eva > MAX_TOTAL_POINTS) {
     return alert(`ステータスポイントの合計が ${MAX_TOTAL_POINTS}pt を超えています！`);
@@ -139,23 +165,26 @@ async function handleCreateCharacter(e) {
 
   const tagsInput = document.getElementById('char-tags')?.value || '';
   const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
-
   const customSkill = (typeof selectedSkillData !== 'undefined' && selectedSkillData) ? selectedSkillData : null;
 
-  const roleEl = document.getElementById('char-role');
-  const roleKey = roleEl ? roleEl.value : 'melee';
+  let normalSkill = document.getElementById('char-normal-skill')?.value.trim() || '通常攻撃';
+  let specialSkill = document.getElementById('char-special-skill')?.value.trim() || '奥義';
+
+  if (roleDef && roleDef.lockSkillNames) {
+    normalSkill = '回復魔法';
+    specialSkill = '大回復魔法';
+  }
 
   const newChar = {
     id: 'char_' + Date.now(),
     name: document.getElementById('char-name').value.trim(),
     job: document.getElementById('char-job')?.value.trim() || '冒険者',
-    attackType: document.getElementById('char-attack-type')?.value || '物理',
     role: roleKey,
     tags: tags,
     bio: document.getElementById('char-bio')?.value.trim() || '',
     appearance: document.getElementById('char-appearance')?.value.trim() || '',
-    normalSkill: document.getElementById('char-normal-skill')?.value.trim() || '通常攻撃',
-    specialSkill: document.getElementById('char-special-skill')?.value.trim() || '奥義',
+    normalSkill: normalSkill,
+    specialSkill: specialSkill,
     quote: document.getElementById('char-quote')?.value.trim() || '……',
     stats: {
       hp: hp * 5,
@@ -177,21 +206,19 @@ async function handleCreateCharacter(e) {
   } else {
     if (!appState.localCharacters) appState.localCharacters = [];
     if (!appState.characters) appState.characters = [];
-
     appState.localCharacters.push(newChar);
-
     if (typeof saveLocalCharacters === 'function') saveLocalCharacters();
-
     appState.characters = [...appState.localCharacters];
     if (typeof renderCharacterGallery === 'function') renderCharacterGallery();
-    if (typeof renderTeamChecklists === 'function') renderTeamChecklists();
-
+    if (typeof renderTeamSlots === 'function') renderTeamSlots();
     alert(`キャラクター「${newChar.name}」をローカルに保存しました！`);
   }
 
   document.getElementById('create-form').reset();
   updateStatValues('create');
   if (typeof clearSkillSelection === 'function') clearSkillSelection('');
+  if (typeof renderRoleSelector === 'function') renderRoleSelector('');
+  applyRoleFormRestrictions('');
 }
 
 window.openEditModal = function(id) {
@@ -202,7 +229,6 @@ window.openEditModal = function(id) {
   document.getElementById('edit-char-id').value = char.id;
   document.getElementById('edit-char-name').value = char.name;
   document.getElementById('edit-char-job').value = char.job || '冒険者';
-  document.getElementById('edit-char-attack-type').value = char.attackType || '物理';
   document.getElementById('edit-char-tags').value = Array.isArray(char.tags) ? char.tags.join(', ') : '';
   document.getElementById('edit-char-bio').value = char.bio || '';
   document.getElementById('edit-char-appearance').value = char.appearance || '';
@@ -227,6 +253,7 @@ window.openEditModal = function(id) {
   }
 
   if (typeof renderRoleSelector === 'function') renderRoleSelector('edit-');
+  applyRoleFormRestrictions('edit-');
 
   const hpPt = char.stats.hp ? Math.floor(char.stats.hp / 5) : 0;
   const atkPt = char.stats.atk || 0;
@@ -251,7 +278,42 @@ window.closeEditModal = function() {
 };
 
 /* ===================================================
-   役職パッシブ適用
+   役職によるフォーム制限（ヒーラー: 技名入力不可・SPD固定）
+   =================================================== */
+function applyRoleFormRestrictions(prefix = '') {
+  const roleEl = document.getElementById(`${prefix}char-role`);
+  if (!roleEl) return;
+  const roleKey = roleEl.value;
+  const roleDef = ROLES[roleKey];
+  if (!roleDef) return;
+
+  const normalSkillInput = document.getElementById(`${prefix}char-normal-skill`);
+  const specialSkillInput = document.getElementById(`${prefix}char-special-skill`);
+  const spdSlider = document.getElementById(`${prefix}stat-eva`);
+  const spdNum = document.getElementById(`${prefix}num-stat-eva`);
+  const atkLabel = document.querySelector(`label[for="${prefix}stat-atk"]`);
+
+  if (roleDef.lockSkillNames) {
+    if (normalSkillInput) { normalSkillInput.disabled = true; normalSkillInput.value = '回復魔法'; }
+    if (specialSkillInput) { specialSkillInput.disabled = true; specialSkillInput.value = '大回復魔法'; }
+    if (spdSlider) { spdSlider.disabled = true; spdSlider.value = 0; }
+    if (spdNum) { spdNum.disabled = true; spdNum.value = 0; }
+  } else {
+    if (normalSkillInput) normalSkillInput.disabled = false;
+    if (specialSkillInput) specialSkillInput.disabled = false;
+    if (spdSlider) spdSlider.disabled = false;
+    if (spdNum) spdNum.disabled = false;
+  }
+
+  if (typeof setupStatSync === 'function') {
+    setupStatSync(prefix === 'edit-' ? 'edit-' : '', prefix === 'edit-');
+  } else {
+    updateStatValues(prefix);
+  }
+}
+
+/* ===================================================
+   役職パッシブ適用（バトル開始時）
    =================================================== */
 function applyRolePassive(fighter) {
   const role = fighter.role || 'melee';
@@ -264,18 +326,18 @@ function applyRolePassive(fighter) {
       fighter.stats.atk = Math.floor(fighter.stats.atk * 1.2);
       break;
     case 'ranged':
-      fighter.specialMultiplier = 2.0;
+      fighter.specialMultiplier = 2.5;
       fighter.targetWeight = 0.5;
-      fighter.attackSuccessRate = 70;
       break;
     case 'mage':
       fighter.defPenetration = 0.5;
       break;
     case 'healer':
       fighter.isHealer = true;
-      fighter.healMultiplier = 1.2;
-      fighter.attackSuccessRate = 100;
+      fighter.healMultiplier = 1.4;
       fighter.targetWeight = 0.5;
+      fighter.stats.spd = 0;
+      fighter.stats.eva = 0;
       break;
     case 'tank':
       fighter.stats.maxHp = Math.floor(fighter.stats.maxHp * 1.2);
@@ -283,10 +345,6 @@ function applyRolePassive(fighter) {
       fighter.currentHp = fighter.stats.maxHp;
       fighter.stats.def = Math.floor(fighter.stats.def * 1.2);
       fighter.targetWeight = 3.0;
-      break;
-    case 'trapper':
-      fighter.isTrapper = true;
-      fighter.attackSuccessRate = 100;
       break;
     default:
       break;
@@ -308,12 +366,10 @@ function calculateDamage(attacker, target, isSpecial) {
   let atk = attacker.stats.atk || 0;
   let def = target.stats.def || 0;
 
-  // 魔術師の防御貫通
   if (attacker.defPenetration) {
     def = Math.floor(def * (1 - attacker.defPenetration));
   }
 
-  // 必殺技倍率
   const specialMult = attacker.specialMultiplier || 1.5;
   atk = Math.floor(atk * (isSpecial ? specialMult : 1.0));
 
@@ -324,12 +380,10 @@ function calculateDamage(attacker, target, isSpecial) {
     damage = Math.floor(def * 0.1 + (atk - def));
   }
 
-  // 前衛の被物理ダメージ軽減（特殊技は魔法扱いで軽減外）
   if (target.physicalDamageReduction && !isSpecial) {
     damage = Math.floor(damage * (1 - target.physicalDamageReduction));
   }
 
-  // 被ダメージ上昇デバフ（最終ダメージに乗算）
   if (target.damageUpMultiplier && target.damageUpMultiplier > 1) {
     damage = Math.floor(damage * target.damageUpMultiplier);
   }
@@ -338,50 +392,110 @@ function calculateDamage(attacker, target, isSpecial) {
 }
 
 /* ===================================================
-   カスタムスキル条件判定
+   全発動条件プログラム化
    =================================================== */
-function checkSkillCondition(skill, attacker, target, currentTurn) {
+const SKILL_CONDITIONS = {
+  ON_BATTLE_START: 'on_battle_start',
+  ON_ATTACK_START: 'on_attack_start',
+  EVERY_N_TURNS: 'every_n_turns',
+  HP_BELOW: 'hp_below',
+  HP_ABOVE: 'hp_above',
+  ON_DAMAGE_TAKEN: 'on_damage_taken',
+  ON_KILL: 'on_kill',
+  TURN_AFTER: 'turn_after',
+  TURN_BEFORE: 'turn_before',
+  FIRST_TURN: 'first_turn',
+  ALWAYS: 'always'
+};
+
+function parseConditionType(conditionStr) {
+  if (!conditionStr) return SKILL_CONDITIONS.ALWAYS;
+  const c = conditionStr.trim().toLowerCase();
+
+  if (c === '常時' || c === 'なし' || c === '無条件' || c === 'always' || c === '') return SKILL_CONDITIONS.ALWAYS;
+  if (c.includes('バトル開始') || c.includes('戦闘開始') || c.includes('on_battle_start')) return SKILL_CONDITIONS.ON_BATTLE_START;
+  if (c.includes('攻撃開始') || c.includes('on_attack_start') || c.includes('攻撃時')) return SKILL_CONDITIONS.ON_ATTACK_START;
+  if (c.includes('被弾') || c.includes('被打撃') || c.includes('on_damage_taken') || c.includes('被ダメージ')) return SKILL_CONDITIONS.ON_DAMAGE_TAKEN;
+  if (c.includes('撃破時') || c.includes('on_kill') || c.includes('敵を倒')) return SKILL_CONDITIONS.ON_KILL;
+  if (c.includes('先制') || c.includes('第1ターン') || c.includes('1ターン目') || c.includes('first_turn')) return SKILL_CONDITIONS.FIRST_TURN;
+
+  const everyMatch = c.match(/(\d+)\s*ターン毎|every\s*(\d+)/);
+  if (everyMatch) return { type: SKILL_CONDITIONS.EVERY_N_TURNS, n: parseInt(everyMatch[1] || everyMatch[2]) };
+
+  const hpBelowMatch = c.match(/hp\s*(\d+)\s*%?\s*以下|hp\s*50%以下/);
+  if (hpBelowMatch) return { type: SKILL_CONDITIONS.HP_BELOW, threshold: parseInt(hpBelowMatch[1]) };
+
+  const hpAboveMatch = c.match(/hp\s*(\d+)\s*%?\s*以上/);
+  if (hpAboveMatch) return { type: SKILL_CONDITIONS.HP_ABOVE, threshold: parseInt(hpAboveMatch[1]) };
+
+  const turnAfterMatch = c.match(/(\d+)\s*ターン(?:以降|経過後|以上|後)/);
+  if (turnAfterMatch) return { type: SKILL_CONDITIONS.TURN_AFTER, n: parseInt(turnAfterMatch[1]) };
+
+  const turnBeforeMatch = c.match(/(\d+)\s*ターン(?:以内|未満)/);
+  if (turnBeforeMatch) return { type: SKILL_CONDITIONS.TURN_BEFORE, n: parseInt(turnBeforeMatch[1]) };
+
+  return SKILL_CONDITIONS.ALWAYS;
+}
+
+function checkSkillCondition(skill, attacker, target, currentTurn, triggerEvent) {
   if (!skill) return true;
-  const condition = (skill.condition || '常時').trim();
-  if (!condition || condition === '常時' || condition === 'なし' || condition === '無条件') {
-    return true;
-  }
+  const condition = skill.condition || '常時';
+  const parsed = parseConditionType(condition);
 
-  const maxHp = attacker.stats.maxHp || attacker.stats.hp || 1;
-  const hpPercent = (attacker.currentHp / maxHp) * 100;
+  if (parsed === SKILL_CONDITIONS.ALWAYS) return true;
+  if (parsed === SKILL_CONDITIONS.ON_BATTLE_START) return triggerEvent === 'on_battle_start';
+  if (parsed === SKILL_CONDITIONS.ON_ATTACK_START) return triggerEvent === 'on_attack_start';
+  if (parsed === SKILL_CONDITIONS.ON_DAMAGE_TAKEN) return triggerEvent === 'on_damage_taken';
+  if (parsed === SKILL_CONDITIONS.ON_KILL) return triggerEvent === 'on_kill';
+  if (parsed === SKILL_CONDITIONS.FIRST_TURN) return currentTurn === 1;
 
-  const hpBelowMatch = condition.match(/HP\s*(\d+)\s*%?\s*以下/);
-  if (hpBelowMatch) {
-    return hpPercent <= parseInt(hpBelowMatch[1]);
-  }
-
-  const hpAboveMatch = condition.match(/HP\s*(\d+)\s*%?\s*以上/);
-  if (hpAboveMatch) {
-    return hpPercent >= parseInt(hpAboveMatch[1]);
-  }
-
-  const turnMatch = condition.match(/(\d+)\s*ターン(?:以降|経過後|以上)/);
-  if (turnMatch) {
-    return (currentTurn || 0) >= parseInt(turnMatch[1]);
-  }
-
-  const turnBeforeMatch = condition.match(/(\d+)\s*ターン(?:以内|未満)/);
-  if (turnBeforeMatch) {
-    return (currentTurn || 0) < parseInt(turnBeforeMatch[1]);
-  }
-
-  const firstTurnMatch = condition.match(/先制|第1ターン|1ターン目/);
-  if (firstTurnMatch) {
-    return (currentTurn || 0) === 0;
+  if (typeof parsed === 'object') {
+    switch (parsed.type) {
+      case SKILL_CONDITIONS.EVERY_N_TURNS:
+        return currentTurn % parsed.n === 0;
+      case SKILL_CONDITIONS.HP_BELOW: {
+        const maxHp = attacker.stats.maxHp || attacker.stats.hp || 1;
+        return (attacker.currentHp / maxHp) * 100 <= parsed.threshold;
+      }
+      case SKILL_CONDITIONS.HP_ABOVE: {
+        const maxHp = attacker.stats.maxHp || attacker.stats.hp || 1;
+        return (attacker.currentHp / maxHp) * 100 >= parsed.threshold;
+      }
+      case SKILL_CONDITIONS.TURN_AFTER:
+        return currentTurn >= parsed.n;
+      case SKILL_CONDITIONS.TURN_BEFORE:
+        return currentTurn < parsed.n;
+    }
   }
 
   return true;
 }
 
 /* ===================================================
+   特殊フラグ解析: 時止め / 先制攻撃
+   =================================================== */
+function parseSpecialFlags(skill) {
+  if (!skill) return {};
+  const flags = {};
+  const condition = (skill.condition || '').toLowerCase();
+  const desc = (skill.description || '').toLowerCase();
+  const name = (skill.name || '').toLowerCase();
+
+  if (condition.includes('時止') || desc.includes('時止') || name.includes('時止') ||
+      condition.includes('time_stop') || desc.includes('time_stop')) {
+    flags.isTimeStop = true;
+  }
+  if (condition.includes('先制') || desc.includes('先制') || name.includes('先制') ||
+      condition.includes('first_strike') || desc.includes('first_strike')) {
+    flags.isFirstStrike = true;
+  }
+  return flags;
+}
+
+/* ===================================================
    カスタムスキル実行
    =================================================== */
-function executeCustomSkill(attacker, target, skill, currentTurn) {
+function executeCustomSkill(attacker, target, skill, currentTurn, triggerEvent) {
   const result = {
     activated: false,
     skillName: skill.name || 'カスタム技',
@@ -392,10 +506,13 @@ function executeCustomSkill(attacker, target, skill, currentTurn) {
     debuffDef: 0,
     damageUp: 0,
     stun: false,
+    isTimeStop: false,
+    isFirstStrike: false,
+    skipTargetTurn: false,
     duration: skill.duration || 0
   };
 
-  if (!checkSkillCondition(skill, attacker, target, currentTurn)) {
+  if (!checkSkillCondition(skill, attacker, target, currentTurn, triggerEvent)) {
     return result;
   }
 
@@ -404,6 +521,11 @@ function executeCustomSkill(attacker, target, skill, currentTurn) {
     return result;
   }
   result.activated = true;
+
+  const flags = parseSpecialFlags(skill);
+  result.isTimeStop = !!flags.isTimeStop;
+  result.isFirstStrike = !!flags.isFirstStrike;
+  if (result.isTimeStop) result.skipTargetTurn = true;
 
   const effectType = (skill.effectType || 'damage').toLowerCase();
   const effectValue = Math.max(0, skill.effectValue || 0);
@@ -446,19 +568,13 @@ function executeCustomSkill(attacker, target, skill, currentTurn) {
   return result;
 }
 
-function escapeHtmlBattle(str) {
-  if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
 /* ===================================================
-   ターゲット選択（狙われやすさ・前衛後衛・役職考慮）
+   ターゲット選択
    =================================================== */
 function selectTarget(enemies) {
   const candidates = enemies.filter(f => f.currentHp > 0);
   if (candidates.length === 0) return null;
 
-  // 前衛を優先ターゲット、タンクは重み大、後衛・遠距離は狙われにくい
   const weighted = [];
   candidates.forEach(f => {
     let weight = f.targetWeight || 1;
@@ -472,80 +588,7 @@ function selectTarget(enemies) {
 }
 
 /* ===================================================
-   CROSS ATTACK 連携攻撃確率
-   =================================================== */
-function getCrossAttackProbability(n) {
-  if (n < 2) return 0;
-  // 2体: 10%, 3体: 5%, 4体: 2.5%, ... 減衰
-  return 10 / Math.pow(2, n - 2);
-}
-
-function tryCrossAttack(attackers, target, attackerTeam, turn, logs) {
-  const n = attackers.length;
-  if (n < 2) return null;
-
-  const prob = getCrossAttackProbability(n);
-  if (Math.random() * 100 >= prob) return null;
-
-  // カットインログ
-  logs.push(`✨✨ [CROSS ATTACK×${n}!!] ✨✨`);
-  const names = attackers.map(a => a.name).join('と');
-  logs.push(`🔥 ${names}による同時攻撃!!`);
-
-  let totalDamage = 0;
-  attackers.forEach(attacker => {
-    const isSpecial = Math.random() < 0.10 && !attacker.isTrapper && !attacker.isHealer;
-    const dmg = calculateDamage(attacker, target, isSpecial);
-    totalDamage += dmg;
-  });
-
-  totalDamage = Math.floor(totalDamage);
-  target.currentHp = Math.max(0, target.currentHp - totalDamage);
-
-  logs.push(`💥 合計 ${totalDamage} ダメージ！ (残HP: ${target.currentHp})`);
-
-  if (target.currentHp <= 0) {
-    logs.push(`💥 ${target.name} は力尽き倒れた！`);
-  }
-
-  return totalDamage;
-}
-
-/* ===================================================
-   トラッパー処理
-   =================================================== */
-function processTraps(fighter, enemies, turn, logs) {
-  if (!fighter.traps) fighter.traps = [];
-
-  for (let i = fighter.traps.length - 1; i >= 0; i--) {
-    const trap = fighter.traps[i];
-    if (turn < trap.triggerTurn) continue;
-
-    const target = enemies.find(e => e.id === trap.targetId && e.currentHp > 0);
-    if (!target) {
-      fighter.traps.splice(i, 1);
-      continue;
-    }
-
-    const disarmRoll = Math.random() * 100;
-    if (disarmRoll < 60) {
-      logs.push(`🪤 [${fighter.team}] ${fighter.name} のトラップを ${target.name} は感知！ トラップの解除に成功した！`);
-      fighter.traps.splice(i, 1);
-    } else {
-      logs.push(`🪤 [${fighter.team}] ${fighter.name} のトラップを ${target.name} は感知！ しかしトラップの解除に失敗した！`);
-      const trapDamage = Math.floor((fighter.stats.atk || 0) * 2.5);
-      target.currentHp = Math.max(0, target.currentHp - trapDamage);
-      logs.push(`💥 ${target.name} にトラップが発動！ ${trapDamage} ダメージ！ (残HP: ${target.currentHp})`);
-      if (target.currentHp <= 0) {
-        logs.push(`💥 ${target.name} は力尽き倒れた！`);
-      }
-      fighter.traps.splice(i, 1);
-    }
-  }
-}
-
-/* ===================================================
-   ヒーラー自動回復
+   ヒーラー自動全体回復
    =================================================== */
 function healerAutoHeal(fighter, allies, turn, logs) {
   if (!fighter.isHealer || fighter.currentHp <= 0) return;
@@ -554,26 +597,19 @@ function healerAutoHeal(fighter, allies, turn, logs) {
   const wounded = allies.filter(a => a.currentHp > 0 && a.currentHp < (a.stats.maxHp || a.stats.hp));
   if (wounded.length === 0) return;
 
-  const target = wounded[Math.floor(Math.random() * wounded.length)];
-  const healAmount = Math.floor((fighter.stats.atk || 0) * (fighter.healMultiplier || 1.2));
-  target.currentHp = Math.min(target.stats.maxHp || target.stats.hp, target.currentHp + healAmount);
+  const healAmount = Math.floor((fighter.stats.atk || 0) * (fighter.healMultiplier || 1.4));
 
-  logs.push(`💚 [${fighter.team}] ${fighter.name} のパッシブ回復！ ${target.name} のHPを ${healAmount} 回復！ (残HP: ${target.currentHp})`);
-}
-
-/* ===================================================
-   チーム選択連動
-   =================================================== */
-function syncSelectedTeams() {
-  appState.p1Team = Array.from(document.querySelectorAll('#p1-checklist input:checked')).map(cb => cb.value);
-  appState.p2Team = Array.from(document.querySelectorAll('#p2-checklist input:checked')).map(cb => cb.value);
+  wounded.forEach(target => {
+    target.currentHp = Math.min(target.stats.maxHp || target.stats.hp, target.currentHp + healAmount);
+    logs.push(`💚 [${fighter.team}] ${fighter.name} の自動全体回復！ ${target.name} のHPを ${healAmount} 回復！ (残HP: ${target.currentHp})`);
+  });
 }
 
 /* ===================================================
    バトルシミュレーション本体
    =================================================== */
 function runBattleSimulation() {
-  syncSelectedTeams();
+  if (typeof syncTeamSlots === 'function') syncTeamSlots();
 
   if (appState.p1Team.length === 0 || appState.p2Team.length === 0) {
     return alert('1P・2Pの両方のチームに1体以上選択してください！');
@@ -581,6 +617,8 @@ function runBattleSimulation() {
 
   const p1Name = appState.p1Name || document.getElementById('p1-team-name-input')?.value || '1Pチーム';
   const p2Name = appState.p2Name || document.getElementById('p2-team-name-input')?.value || '2Pチーム';
+
+  if (typeof playSE === 'function') playSE('battle_start');
 
   const logBox = document.getElementById('battle-log');
   let logs = [`⚔️ 【${p1Name}】 VS 【${p2Name}】 バトル開始！\n`];
@@ -600,10 +638,10 @@ function runBattleSimulation() {
         teamIndex: index,
         currentHp: hpVal,
         formation: formation,
-        traps: [],
         targetWeight: 1,
         specialMultiplier: 1.5,
-        attackSuccessRate: 100
+        skillActivatedThisTurn: false,
+        skipNextTurn: false
       };
       applyRolePassive(fighter);
       return fighter;
@@ -618,8 +656,24 @@ function runBattleSimulation() {
   p2Fighters.forEach(c => logs.push(`[${p2Name}] ${c.name} (${c.job || '冒険者'}) [${getRoleLabel(c.role)}] [${c.formation === 'front' ? '前衛' : '後衛'}] / 「${c.quote || '……'}」`));
   logs.push(`-------------------\n`);
 
-  p1Fighters.filter(f => f.currentHp <= 0).forEach(c => logs.push(`💀 ${c.name} はHPが0のため戦闘開始時に力尽き倒れた！`));
-  p2Fighters.filter(f => f.currentHp <= 0).forEach(c => logs.push(`💀 ${c.name} はHPが0のため戦闘開始時に力尽き倒れた！`));
+  // on_battle_start スキル発動
+  [...p1Fighters, ...p2Fighters].forEach(f => {
+    if (f.currentHp <= 0 || !f.customSkill) return;
+    if (!ROLES[f.role]?.canUseSkill) return;
+    const result = executeCustomSkill(f, null, f.customSkill, 1, 'on_battle_start');
+    if (result.activated) {
+      logs.push(`✨ [${f.team}] ${f.name} の「${result.skillName}」が戦闘開始時に発動！`);
+      if (typeof playSE === 'function') playSE('skill');
+      if (result.buffAtk > 0) {
+        f.stats.atk = (f.stats.atk || 0) + result.buffAtk;
+        logs.push(`⚡ 攻撃力 +${result.buffAtk}！`);
+      }
+      if (result.buffDef > 0) {
+        f.stats.def = (f.stats.def || 0) + result.buffDef;
+        logs.push(`🛡️ 防御力 +${result.buffDef}！`);
+      }
+    }
+  });
 
   let turn = 1;
   const maxTurns = 50;
@@ -632,19 +686,11 @@ function runBattleSimulation() {
 
     logs.push(`--- Turn ${turn} ---`);
 
-    // ターン開始時: トラップ処理
-    [...activeP1, ...activeP2].forEach(f => {
-      if (f.isTrapper) {
-        const enemyTeam = f.team === '1P' ? p2Fighters : p1Fighters;
-        processTraps(f, enemyTeam, turn, logs);
-      }
-    });
-
-    // ヒーラー自動回復
+    // ヒーラー自動全体回復
     activeP1.forEach(f => healerAutoHeal(f, p1Fighters, turn, logs));
     activeP2.forEach(f => healerAutoHeal(f, p2Fighters, turn, logs));
 
-    // 行動順ソート
+    // 行動順ソート (SPD降順)
     const actionQueue = [...activeP1, ...activeP2].sort((a, b) => {
       const spdA = a.stats.spd || a.stats.eva || 0;
       const spdB = b.stats.spd || b.stats.eva || 0;
@@ -653,17 +699,14 @@ function runBattleSimulation() {
       return a.teamIndex - b.teamIndex;
     });
 
-    // CROSS ATTACK判定用: 各チームの行動可能メンバー
-    const p1Active = actionQueue.filter(f => f.team === '1P' && f.currentHp > 0 && !f.isHealer);
-    const p2Active = actionQueue.filter(f => f.team === '2P' && f.currentHp > 0 && !f.isHealer);
-
-    let crossAttackUsed = false;
+    const skippedFighters = new Set();
 
     for (const attacker of actionQueue) {
       if (attacker.currentHp <= 0) continue;
-      if (crossAttackUsed) {
-        // クロス攻撃後は同チームの残り行動をスキップ
-        if (attacker.team === (p1Active.includes(attacker) ? '1P' : '2P')) continue;
+      if (skippedFighters.has(attacker.id)) {
+        logs.push(`💫 [${attacker.team}] ${attacker.name} は時止めの影響で行動できない！`);
+        skippedFighters.delete(attacker.id);
+        continue;
       }
 
       const enemyTeam = attacker.team === '1P'
@@ -672,54 +715,90 @@ function runBattleSimulation() {
 
       if (enemyTeam.length === 0) break;
 
-      // ヒーラーは通常攻撃しない
+      attacker.skillActivatedThisTurn = false;
+
+      // ヒーラー: 回復行動のみ
       if (attacker.isHealer) {
         const allies = attacker.team === '1P' ? p1Fighters : p2Fighters;
         const wounded = allies.filter(a => a.currentHp > 0 && a.currentHp < (a.stats.maxHp || a.stats.hp));
         if (wounded.length > 0) {
-          const target = wounded[Math.floor(Math.random() * wounded.length)];
-          const healAmount = Math.floor((attacker.stats.atk || 0) * (attacker.healMultiplier || 1.2));
-          target.currentHp = Math.min(target.stats.maxHp || target.stats.hp, target.currentHp + healAmount);
-          logs.push(`💚 [${attacker.team}] ${attacker.name} の回復魔法！ ${target.name} のHPを ${healAmount} 回復！ (残HP: ${target.currentHp})`);
+          wounded.forEach(target => {
+            const healAmount = Math.floor((attacker.stats.atk || 0) * (attacker.healMultiplier || 1.4));
+            target.currentHp = Math.min(target.stats.maxHp || target.stats.hp, target.currentHp + healAmount);
+            logs.push(`💚 [${attacker.team}] ${attacker.name} の回復魔法！ ${target.name} のHPを ${healAmount} 回復！ (残HP: ${target.currentHp})`);
+          });
+          if (typeof playSE === 'function') playSE('heal');
         } else {
           logs.push(`💚 [${attacker.team}] ${attacker.name} は回復の準備をしている...`);
         }
         continue;
       }
 
-      // トラッパー: トラップ設置
-      if (attacker.isTrapper) {
-        const target = selectTarget(enemyTeam);
-        if (!target) continue;
-        attacker.traps.push({
-          targetId: target.id,
-          triggerTurn: turn + 3
-        });
-        logs.push(`🪤 [${attacker.team}] ${attacker.name} は ${target.name} にトラップを設置した！ (3ターン後に発動)`);
-        continue;
-      }
+      // on_attack_start スキル判定
+      let skillActivated = false;
+      let skillResult = null;
 
-      // CROSS ATTACK判定
-      if (!crossAttackUsed) {
-        const sameTeamActives = attacker.team === '1P' ? p1Active : p2Active;
-        if (sameTeamActives.length >= 2) {
-          // 確率減衰: 2体=10%, 3体=5%, 4体=2.5%...
-          const maxPossible = Math.min(sameTeamActives.length, 4);
-          for (let n = maxPossible; n >= 2; n--) {
-            const prob = getCrossAttackProbability(n);
-            if (Math.random() * 100 < prob) {
-              const crossAttackers = sameTeamActives.slice(0, n).filter(a => a.currentHp > 0);
-              if (crossAttackers.length === n) {
-                const target = selectTarget(enemyTeam);
-                if (target) {
-                  tryCrossAttack(crossAttackers, target, attacker.team, turn, logs);
-                  crossAttackUsed = true;
-                  break;
-                }
-              }
+      if (attacker.customSkill && ROLES[attacker.role]?.canUseSkill) {
+        skillResult = executeCustomSkill(attacker, null, attacker.customSkill, turn, 'on_attack_start');
+        if (skillResult.activated) {
+          skillActivated = true;
+          attacker.skillActivatedThisTurn = true;
+          if (typeof playSE === 'function') playSE('skill');
+          logs.push(`✨ [${attacker.team}] ${attacker.name} の「${skillResult.skillName}」が発動！`);
+
+          // 時止め処理: 相手チーム全員の次ターンをスキップ
+          if (skillResult.isTimeStop) {
+            logs.push(`⏸️ 時が止まった！相手チームは次の行動ができない！`);
+            const enemyAll = attacker.team === '1P' ? p2Fighters : p1Fighters;
+            enemyAll.forEach(e => { if (e.currentHp > 0) skippedFighters.add(e.id); });
+          }
+
+          // バフ・デバフ適用
+          if (skillResult.buffAtk > 0) {
+            attacker.stats.atk = (attacker.stats.atk || 0) + skillResult.buffAtk;
+            logs.push(`⚡ 攻撃力 +${skillResult.buffAtk} (持続${skillResult.duration}T)`);
+          }
+          if (skillResult.buffDef > 0) {
+            attacker.stats.def = (attacker.stats.def || 0) + skillResult.buffDef;
+            logs.push(`🛡️ 防御力 +${skillResult.buffDef} (持続${skillResult.duration}T)`);
+          }
+          if (skillResult.heal > 0) {
+            attacker.currentHp = Math.min(attacker.stats.maxHp || attacker.stats.hp, attacker.currentHp + skillResult.heal);
+            logs.push(`💚 HPを ${skillResult.heal} 回復！ (残HP: ${attacker.currentHp})`);
+          }
+
+          // スキル発動ターンは必殺技・通常攻撃をキャンセル
+          // スキル自体にダメージがある場合は適用
+          if (skillResult.bonusDamage > 0) {
+            const target = selectTarget(enemyTeam);
+            if (target) {
+              target.currentHp = Math.max(0, target.currentHp - skillResult.bonusDamage);
+              logs.push(`💥 ${target.name} に ${skillResult.bonusDamage} ダメージ！ (残HP: ${target.currentHp})`);
+              if (target.currentHp <= 0) logs.push(`💥 ${target.name} は力尽き倒れた！`);
             }
           }
-          if (crossAttackUsed) continue;
+          if (skillResult.stun) {
+            const target = selectTarget(enemyTeam);
+            if (target) {
+              skippedFighters.add(target.id);
+              logs.push(`💫 ${target.name} はスタン状態になった！ (持続${skillResult.duration}T)`);
+            }
+          }
+          if (skillResult.debuffDef > 0) {
+            const target = selectTarget(enemyTeam);
+            if (target) {
+              target.stats.def = Math.max(0, (target.stats.def || 0) - skillResult.debuffDef);
+              logs.push(`🔻 ${target.name} は防御力 -${skillResult.debuffDef} の弱体を受けた！`);
+            }
+          }
+          if (skillResult.damageUp > 0) {
+            const target = selectTarget(enemyTeam);
+            if (target) {
+              target.damageUpMultiplier = 1 + skillResult.damageUp;
+              logs.push(`🔻 ${target.name} は被ダメージ ${Math.floor(skillResult.damageUp * 100)}% 上昇の弱体を受けた！`);
+            }
+          }
+          continue;
         }
       }
 
@@ -732,67 +811,61 @@ function runBattleSimulation() {
       const evaPercent = Math.min(50, Math.floor(evaVal / 3));
       if ((Math.random() * 100) < evaPercent) {
         logs.push(`💨 [${attacker.team}] ${attacker.name} の攻撃！ しかし ${target.name} は素早く身をかわした！(MISS)`);
+        if (typeof playSE === 'function') playSE('miss');
         continue;
       }
 
-      // 遠距離物理の攻撃成功率
-      if (attacker.attackSuccessRate && attacker.attackSuccessRate < 100) {
-        if (Math.random() * 100 > attacker.attackSuccessRate) {
-          logs.push(`💨 [${attacker.team}] ${attacker.name} の攻撃は外れた！(命中率${attacker.attackSuccessRate}%)`);
-          continue;
-        }
-      }
-
       const isSpecial = Math.random() < 0.10;
-      let skillName = isSpecial ? (attacker.specialSkill || '奥義') : (attacker.normalSkill || '通常攻撃');
+      const skillName = isSpecial ? (attacker.specialSkill || '奥義') : (attacker.normalSkill || '通常攻撃');
       let damage = calculateDamage(attacker, target, isSpecial);
-      let skillLog = '';
 
       if (isSpecial) {
         logs.push(`🔥 [${attacker.team}] ${attacker.name} の決めゼリフ「${attacker.quote || '……'}」！`);
-      }
-
-      if (isSpecial && attacker.customSkill) {
-        const skillResult = executeCustomSkill(attacker, target, attacker.customSkill, turn);
-        if (skillResult.activated) {
-          skillName = skillResult.skillName;
-          damage += skillResult.bonusDamage;
-          damage = Math.floor(damage);
-
-          if (skillResult.heal > 0) {
-            attacker.currentHp = Math.min(attacker.stats.maxHp || attacker.stats.hp, attacker.currentHp + skillResult.heal);
-            logs.push(`💚 [${attacker.team}] ${attacker.name} の「${skillResult.skillName}」！ HPを ${skillResult.heal} 回復！ (残HP: ${attacker.currentHp})`);
-          }
-          if (skillResult.buffAtk > 0) {
-            attacker.stats.atk = (attacker.stats.atk || 0) + skillResult.buffAtk;
-            logs.push(`⚡ [${attacker.team}] ${attacker.name} の「${skillResult.skillName}」！ 攻撃力 +${skillResult.buffAtk} (持続${skillResult.duration}T)`);
-          }
-          if (skillResult.buffDef > 0) {
-            attacker.stats.def = (attacker.stats.def || 0) + skillResult.buffDef;
-            logs.push(`🛡️ [${attacker.team}] ${attacker.name} の「${skillResult.skillName}」！ 防御力 +${skillResult.buffDef} (持続${skillResult.duration}T)`);
-          }
-          if (skillResult.debuffDef > 0) {
-            target.stats.def = Math.max(0, (target.stats.def || 0) - skillResult.debuffDef);
-            logs.push(`🔻 [${target.team}] ${target.name} は防御力 -${skillResult.debuffDef} の弱体を受けた！ (持続${skillResult.duration}T)`);
-          }
-          if (skillResult.damageUp > 0) {
-            target.damageUpMultiplier = 1 + skillResult.damageUp;
-            logs.push(`🔻 [${target.team}] ${target.name} は被ダメージ ${Math.floor(skillResult.damageUp * 100)}% 上昇の弱体を受けた！ (持続${skillResult.duration}T)`);
-          }
-          if (skillResult.stun) {
-            logs.push(`💫 [${target.team}] ${target.name} はスタン状態になった！ (持続${skillResult.duration}T)`);
-          }
-          skillLog = ` [カスタム技発動]`;
-        }
+        if (typeof playSE === 'function') playSE('special');
+      } else {
+        if (typeof playSE === 'function') playSE('attack');
       }
 
       target.currentHp = Math.max(0, target.currentHp - damage);
 
       const specialTag = isSpecial ? '🔥【必殺技】' : '⚔️';
-      logs.push(`${specialTag} [${attacker.team}] ${attacker.name} の「${skillName}」${skillLog}！ ${target.name} に ${damage} ダメージ！ (残HP: ${target.currentHp})`);
+      logs.push(`${specialTag} [${attacker.team}] ${attacker.name} の「${skillName}」！ ${target.name} に ${damage} ダメージ！ (残HP: ${target.currentHp})`);
 
       if (target.currentHp <= 0) {
         logs.push(`💥 ${target.name} は力尽き倒れた！`);
+        if (typeof playSE === 'function') playSE('ko');
+
+        // on_kill スキル判定
+        if (attacker.customSkill && ROLES[attacker.role]?.canUseSkill && !attacker.skillActivatedThisTurn) {
+          const killResult = executeCustomSkill(attacker, null, attacker.customSkill, turn, 'on_kill');
+          if (killResult.activated) {
+            logs.push(`💀 [${attacker.team}] ${attacker.name} の「${killResult.skillName}」が撃破時に発動！`);
+            if (killResult.buffAtk > 0) {
+              attacker.stats.atk = (attacker.stats.atk || 0) + killResult.buffAtk;
+              logs.push(`⚡ 攻撃力 +${killResult.buffAtk}！`);
+            }
+            if (killResult.heal > 0) {
+              attacker.currentHp = Math.min(attacker.stats.maxHp || attacker.stats.hp, attacker.currentHp + killResult.heal);
+              logs.push(`💚 HPを ${killResult.heal} 回復！ (残HP: ${attacker.currentHp})`);
+            }
+          }
+        }
+      }
+
+      // on_damage_taken スキル判定（被弾側）
+      if (target.currentHp > 0 && target.customSkill && ROLES[target.role]?.canUseSkill && !target.skillActivatedThisTurn) {
+        const dtResult = executeCustomSkill(target, attacker, target.customSkill, turn, 'on_damage_taken');
+        if (dtResult.activated) {
+          logs.push(`🛡️ [${target.team}] ${target.name} の「${dtResult.skillName}」が被弾時に発動！`);
+          if (dtResult.buffDef > 0) {
+            target.stats.def = (target.stats.def || 0) + dtResult.buffDef;
+            logs.push(`🛡️ 防御力 +${dtResult.buffDef}！`);
+          }
+          if (dtResult.heal > 0) {
+            target.currentHp = Math.min(target.stats.maxHp || target.stats.hp, target.currentHp + dtResult.heal);
+            logs.push(`💚 HPを ${dtResult.heal} 回復！ (残HP: ${target.currentHp})`);
+          }
+        }
       }
     }
 
@@ -814,7 +887,6 @@ function runBattleSimulation() {
     logs.push(`⏱ ${maxTurns}ターン経過！ 死亡判定を行います。`);
     logs.push(`【${p1Name}】 死亡者数: ${p1DeadCount}名`);
     logs.push(`【${p2Name}】 死亡者数: ${p2DeadCount}名`);
-
     if (p1DeadCount < p2DeadCount) {
       logs.push(`🏆 死亡者数が少ない【${p1Name}】の判定勝ち！`);
     } else if (p2DeadCount < p1DeadCount) {
@@ -823,6 +895,8 @@ function runBattleSimulation() {
       logs.push(`🤝 死亡者数が同数のため、引き分け！`);
     }
   }
+
+  if (typeof playSE === 'function') playSE('battle_end');
 
   if (logBox) {
     logBox.textContent = logs.join('\n');
@@ -872,23 +946,30 @@ window.saveEditCharacter = function(e) {
 
   char.name = document.getElementById('edit-char-name').value.trim();
   char.job = document.getElementById('edit-char-job').value.trim();
-  char.attackType = document.getElementById('edit-char-attack-type').value;
 
   const editRoleEl = document.getElementById('edit-char-role');
   if (editRoleEl) char.role = editRoleEl.value;
 
+  const roleDef = ROLES[char.role];
   const tagsInput = document.getElementById('edit-char-tags').value;
   char.tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
 
   char.bio = document.getElementById('edit-char-bio').value.trim();
-  char.normalSkill = document.getElementById('edit-char-normal-skill').value.trim();
-  char.specialSkill = document.getElementById('edit-char-special-skill').value.trim();
   char.quote = document.getElementById('edit-char-quote').value.trim();
+
+  if (roleDef && roleDef.lockSkillNames) {
+    char.normalSkill = '回復魔法';
+    char.specialSkill = '大回復魔法';
+  } else {
+    char.normalSkill = document.getElementById('edit-char-normal-skill').value.trim();
+    char.specialSkill = document.getElementById('edit-char-special-skill').value.trim();
+  }
 
   const hpPt = parseInt(document.getElementById('edit-num-stat-hp')?.value) || 0;
   const atkPt = parseInt(document.getElementById('edit-num-stat-atk')?.value) || 0;
   const defPt = parseInt(document.getElementById('edit-num-stat-def')?.value) || 0;
-  const spdPt = parseInt(document.getElementById('edit-num-stat-eva')?.value) || 0;
+  let spdPt = parseInt(document.getElementById('edit-num-stat-eva')?.value) || 0;
+  if (roleDef && roleDef.fixedSpd !== undefined) spdPt = roleDef.fixedSpd;
 
   char.stats = {
     hp: hpPt * 5,
@@ -903,8 +984,7 @@ window.saveEditCharacter = function(e) {
 
   if (typeof saveLocalCharacters === 'function') saveLocalCharacters();
   if (typeof renderCharacterGallery === 'function') renderCharacterGallery();
-  if (typeof renderTeamChecklists === 'function') renderTeamChecklists();
-
+  if (typeof renderTeamSlots === 'function') renderTeamSlots();
   if (typeof closeEditModal === 'function') closeEditModal();
   alert(`「${char.name}」の変更を保存しました！`);
 };
@@ -921,5 +1001,5 @@ window.deleteCharacter = function(id) {
 
   if (typeof saveLocalCharacters === 'function') saveLocalCharacters();
   if (typeof renderCharacterGallery === 'function') renderCharacterGallery();
-  if (typeof renderTeamChecklists === 'function') renderTeamChecklists();
+  if (typeof renderTeamSlots === 'function') renderTeamSlots();
 };
