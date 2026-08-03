@@ -67,6 +67,21 @@ function switchTab(tabId, event) {
   
   document.getElementById(`tab-${tabId}`).classList.add('active');
   if (event) event.target.classList.add('active');
+
+  if (tabId === 'create' && typeof renderRoleSelector === 'function') renderRoleSelector('');
+  if (tabId === 'settings') {
+    if (typeof ProfileManager !== 'undefined' && ProfileManager.renderProfileList) {
+      const settingsList = document.getElementById('settings-profile-list');
+      if (settingsList) {
+        const origContainer = document.getElementById('profile-list');
+        ProfileManager.renderProfileList();
+        if (origContainer && settingsList !== origContainer) {
+          settingsList.innerHTML = origContainer.innerHTML;
+        }
+      }
+    }
+    if (typeof loadApiKeySettings === 'function') loadApiKeySettings();
+  }
 }
 
 // サイドバー開閉
@@ -314,11 +329,14 @@ function getCharFormData(prefix = '') {
   const tagsRaw = document.getElementById(`${prefix}char-tags`)?.value || '';
   const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(t => t) : [];
   const skill = prefix === 'edit-' ? selectedEditSkillData : selectedSkillData;
+  const roleEl = document.getElementById(`${prefix}char-role`);
+  const roleKey = roleEl ? roleEl.value : 'melee';
 
   return {
     name: name,
     job: document.getElementById(`${prefix}char-job`)?.value.trim() || '冒険者',
     attackType: document.getElementById(`${prefix}char-attack-type`)?.value || '近接',
+    role: roleKey,
     tags: tags,
     appearance: document.getElementById(`${prefix}char-appearance`)?.value.trim() || '標準的な姿',
     bio: document.getElementById(`${prefix}char-bio`)?.value.trim() || '特筆なし',
@@ -411,12 +429,17 @@ function updateTeamNameDisplays() {
 
 function createChecklistItem(char, teamPrefix) {
   const div = document.createElement('div');
-  div.className = 'checklist-item';
+  div.className = 'checklist-item checklist-item-with-formation';
+  const roleLabel = (typeof getRoleLabel === 'function') ? getRoleLabel(char.role) : (char.role || 'melee');
   div.innerHTML = `
     <input type="checkbox" id="${teamPrefix}-char-${char.id}" value="${char.id}" onchange="updateTeamCounts()">
-    <label for="${teamPrefix}-char-${char.id}">
-      <strong>${escapeHtml(char.name)}</strong> (${char.job}) - HP:${char.stats.hp} ATK:${char.stats.atk}
+    <label for="${teamPrefix}-char-${char.id}" class="checklist-label">
+      <strong>${escapeHtml(char.name)}</strong> (${escapeHtml(char.job)}) [${escapeHtml(roleLabel)}] HP:${char.stats.hp} ATK:${char.stats.atk}
     </label>
+    <select class="formation-select" id="formation-${teamPrefix}-${char.id}" onchange="updateTeamCounts()">
+      <option value="front">前衛</option>
+      <option value="back">後衛</option>
+    </select>
   `;
   return div;
 }
@@ -426,6 +449,60 @@ function updateTeamCounts() {
   const p2Count = document.querySelectorAll('#p2-checklist input:checked').length;
   document.getElementById('p1-count').textContent = p1Count;
   document.getElementById('p2-count').textContent = p2Count;
+}
+
+/* ===================================================
+   ルール・計算仕様タブ表示関数
+   =================================================== */
+function switchRulesTab(tabId, event) {
+  document.querySelectorAll('.rules-tab-btn').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.rules-tab-panel').forEach(el => el.classList.remove('active'));
+  if (event && event.target) event.target.classList.add('active');
+  const panel = document.getElementById(`rules-panel-${tabId}`);
+  if (panel) panel.classList.add('active');
+}
+
+/* ===================================================
+   役職（ジョブ）カードセレクター
+   =================================================== */
+function renderRoleSelector(prefix = '') {
+  const container = document.getElementById(`${prefix}role-card-grid`);
+  if (!container) return;
+  const hiddenInput = document.getElementById(`${prefix}char-role`);
+  const currentRole = hiddenInput ? hiddenInput.value : 'melee';
+
+  container.innerHTML = '';
+  Object.entries(ROLES).forEach(([key, role]) => {
+    const card = document.createElement('div');
+    card.className = 'role-card' + (key === currentRole ? ' role-card-selected' : '');
+    card.onclick = () => selectRole(key, prefix);
+    card.innerHTML = `
+      <div class="role-card-icon">${role.icon}</div>
+      <div class="role-card-body">
+        <div class="role-card-name">${escapeHtml(role.label)}</div>
+        <div class="role-card-desc">${escapeHtml(role.desc)}</div>
+        <div class="role-card-passive">${escapeHtml(role.passive)}</div>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function selectRole(roleKey, prefix = '') {
+  const hiddenInput = document.getElementById(`${prefix}char-role`);
+  if (hiddenInput) hiddenInput.value = roleKey;
+  renderRoleSelector(prefix);
+}
+
+function resetAllData() {
+  if (!confirm('すべてのローカルデータ（キャラクター・アカウント・APIキー）を削除しますか？\nこの操作は取り消せません。')) return;
+  localStorage.removeItem('ai_arena_profiles');
+  localStorage.removeItem('ai_arena_active_profile');
+  localStorage.removeItem('my_local_characters');
+  localStorage.removeItem('gemini_api_key');
+  localStorage.removeItem('ai_arena_player_name');
+  alert('すべてのデータをリセットしました。ページを再読み込みしてください。');
+  location.reload();
 }
 
 function setTeamPreset(p1Name, p2Name) {
@@ -489,6 +566,7 @@ function renderCharacterGallery() {
     const defPct = Math.min(100, displayDef);
     const spdPct = Math.min(100, Math.floor(displaySpd / 1.5));
 
+    const roleLabel = (typeof getRoleLabel === 'function') ? getRoleLabel(c.role) : (c.role || 'melee');
     const card = document.createElement('div');
     card.className = 'char-card';
     card.innerHTML = `
@@ -497,7 +575,7 @@ function renderCharacterGallery() {
           <h3 class="char-card-name">${escapeHtml(c.name)}</h3>
           <span class="char-card-job">${escapeHtml(c.job || '冒険者')}</span>
         </div>
-        <span class="char-card-type">${escapeHtml(c.attackType || '物理')}</span>
+        <span class="char-card-type">${escapeHtml(roleLabel)}</span>
       </div>
       <div class="char-card-tags">${tagBadges || '<span class="tag-empty">タグなし</span>'}</div>
       <div class="char-card-stats">

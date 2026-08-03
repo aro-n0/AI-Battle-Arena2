@@ -27,6 +27,36 @@ function updateApiKeyStatus(isSet) {
   }
 }
 
+function saveApiKeySettings() {
+  const keyInput = document.getElementById('settings-gemini-api-key');
+  if (!keyInput) return;
+  const key = keyInput.value.trim();
+  if (!key) return alert('API Keyを入力してください');
+  localStorage.setItem('gemini_api_key', key);
+  updateApiKeyStatusSettings(true);
+  if (typeof loadApiKey === 'function') loadApiKey();
+  alert('API Keyを保存しました');
+}
+
+function updateApiKeyStatusSettings(isSet) {
+  const statusEl = document.getElementById('settings-api-key-status');
+  if (!statusEl) return;
+  if (isSet) {
+    statusEl.textContent = '鍵 設定済み (利用可能)';
+    statusEl.style.color = '#4ade80';
+  } else {
+    statusEl.textContent = '未設定';
+    statusEl.style.color = '#ef4444';
+  }
+}
+
+function loadApiKeySettings() {
+  const key = localStorage.getItem('gemini_api_key');
+  const input = document.getElementById('settings-gemini-api-key');
+  if (input && key) input.value = key;
+  updateApiKeyStatusSettings(!!key);
+}
+
 // AI小説生成メイン関数
 document.addEventListener('DOMContentLoaded', () => {
   const genBtn = document.getElementById('generate-story-btn');
@@ -71,7 +101,7 @@ ${userText}
   "condition": "発動条件（例: HP50%以下時, 常時, 先制攻撃時 など）",
   "probability": 発動確率の数値（0〜100）,
   "target": "対象（例: 単体, 全体, 自分, 味方全体）",
-  "effectType": "効果種別（damage, heal, buff_atk, buff_def, debuff_def, stun, combo, lifesteal のいずれか）",
+  "effectType": "効果種別（damage, heal, buff_atk, buff_def, debuff_def, damage_up, stun, combo, lifesteal のいずれか）",
   "effectValue": 効果量の数値,
   "duration": 持続ターン数の数値（0なら即時）,
   "cost": 消費ポイント（80以上の整数）
@@ -126,6 +156,7 @@ ${userText}
       probability: Math.min(100, Math.max(0, c.probability || 100)),
       target: c.target || '単体',
       effectType: c.effectType || 'damage',
+      damageUp: c.effectType === 'damage_up' ? Math.min(100, Math.floor(c.effectValue || 30)) : 0,
       effectValue: Math.max(0, c.effectValue || 0),
       duration: Math.max(0, c.duration || 0),
       cost: Math.max(80, Math.floor(c.cost || 80))

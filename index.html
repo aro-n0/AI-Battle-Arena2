@@ -38,6 +38,7 @@
       <button class="nav-btn" onclick="switchTab('create', event)">➕ キャラ作成</button>
       <button class="nav-btn" onclick="switchTab('gallery', event)">📚 共有キャラ一覧</button>
       <button class="nav-btn" onclick="switchTab('battle', event)">⚔️ バトル＆AI小説</button>
+      <button class="nav-btn" onclick="switchTab('settings', event)">⚙️ 設定</button>
     </nav>
 
     <!-- 1. マルチ部屋タブ (スマホ・PC対応 1列レイアウト) -->
@@ -99,6 +100,12 @@
               <label>職業 / 肩書</label>
               <input type="text" id="char-job" class="input-lg" placeholder="例: 魔導剣士">
             </div>
+          </div>
+
+          <div class="form-group">
+            <label>🎯 役職（ジョブ・パッシブ）</label>
+            <input type="hidden" id="char-role" value="melee">
+            <div id="role-card-grid" class="role-card-grid"></div>
           </div>
 
           <div class="grid-2col">
@@ -315,6 +322,99 @@
       </div>
     </section>
 
+    <!-- 設定タブ -->
+    <section id="tab-settings" class="tab-content">
+      <div class="panel">
+        <h2>⚙️ 設定・管理</h2>
+
+        <div class="grid-2col">
+          <div>
+            <h3 style="font-size:1rem; margin-bottom:10px;">👤 アカウント管理</h3>
+            <div id="settings-profile-list"></div>
+            <div class="btn-group" style="margin-top: 10px;">
+              <button class="btn-action btn-lg" onclick="createNewProfilePrompt()" style="flex:1;">新規作成</button>
+              <button class="btn-primary btn-lg" onclick="createQuickTestProfileUI()" style="flex:1;">テスト追加</button>
+            </div>
+          </div>
+
+          <div>
+            <h3 style="font-size:1rem; margin-bottom:10px;">🔐 Gemini API Key</h3>
+            <div class="form-group">
+              <input type="password" id="settings-gemini-api-key" class="input-lg" placeholder="AIzaSy...">
+              <button onclick="saveApiKeySettings()" class="btn-action btn-lg" style="margin-top:5px; width: 100%;">保存</button>
+              <span id="settings-api-key-status" style="font-size: 13px; display: block; margin-top: 5px;">未設定</span>
+            </div>
+            <h3 style="font-size:1rem; margin: 20px 0 10px;">🗑️ データリセット</h3>
+            <button onclick="resetAllData()" class="btn-delete btn-lg" style="width:100%;">すべてのデータを削除</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top: 20px;">
+        <h2>📖 ゲームルール・計算仕様</h2>
+        <p class="sub-text">このゲームの仕様・計算式をいつでも確認できます。各タブをクリックして切り替えてください。</p>
+
+        <div class="rules-tab-nav">
+          <button class="rules-tab-btn active" onclick="switchRulesTab('stats', event)">📊 ステータス</button>
+          <button class="rules-tab-btn" onclick="switchRulesTab('roles', event)">🎯 役職パッシブ</button>
+          <button class="rules-tab-btn" onclick="switchRulesTab('formation', event)">🛡️ 前衛・後衛</button>
+          <button class="rules-tab-btn" onclick="switchRulesTab('damage', event)">⚔️ ダメージ計算</button>
+        </div>
+
+        <div id="rules-panel-stats" class="rules-tab-panel active">
+          <h3>ステータスと特殊能力コストの振り分け</h3>
+          <p>キャラクター作成時に <strong>合計200pt</strong> を以下の4ステータス＋特殊能力コストに振り分けます。</p>
+          <ul class="rules-list">
+            <li><strong>❤️ 体力 (HP)</strong>: 振ったpt × 5 が実際のHP値になります。例: 20pt → HP 100</li>
+            <li><strong>⚔️ 攻撃力 (ATK)</strong>: そのまま攻撃力の基礎値になります。例: 30pt → ATK 30</li>
+            <li><strong>🛡️ 防御力 (DEF)</strong>: ダメージ軽減に使用されます。例: 20pt → DEF 20</li>
+            <li><strong>💨 素早さ (SPD)</strong>: 行動順と回避率に影響。回避率 = floor(SPD / 3)%（最大50%）。例: 15pt → 回避5%</li>
+            <li><strong>🧬 特殊能力コスト</strong>: 80pt以上消費。残りが基本ステータスに振れるptになります。</li>
+          </ul>
+          <p><strong>例:</strong> 特殊能力に80pt使った場合、残り120ptをHP・ATK・DEF・SPDに自由に振り分けできます。</p>
+          <p><strong>例:</strong> 特殊能力に120pt使った場合、残り80ptを基本ステータスに振り分けます。より強力なスキルを選ぶほど基礎ステータスは低くなります。</p>
+        </div>
+
+        <div id="rules-panel-roles" class="rules-tab-panel">
+          <h3>全6役職のパッシブ補正・効果一覧</h3>
+          <p>キャラクター作成時に6つの役職から1つを選択します。バトル開始時に自動で補正が適用されます。</p>
+          <ul class="rules-list">
+            <li><strong>⚔️ 近接物理</strong>: HP・攻撃力が1.2倍になります。前線で戦うメインアタッカー向け。</li>
+            <li><strong>🏹 遠距離物理</strong>: 必殺技のダメージ倍率が2.0倍（通常は1.5倍）。狙われにくくなりますが、攻撃の成功率が70%になります（30%の確率で攻撃が外れる）。</li>
+            <li><strong>🔮 魔術師</strong>: 相手の防御力を50%無視（貫通）してダメージ計算します。防御力の高い相手に強いです。</li>
+            <li><strong>💚 ヒーラー</strong>: 通常攻撃ができません。攻撃ステータスが「回復力」として扱われ、回復量が1.2倍になります。4ターンに1回、ランダムな味方1人を自動回復します。</li>
+            <li><strong>🛡️ タンク</strong>: HP・防御力が1.2倍になります。狙われやすさが大幅に上昇するため、味方の盾として機能します。</li>
+            <li><strong>🪤 トラッパー</strong>: 必殺技が発動しません。攻撃時にトラップを設置し、3ターン後に40%の確率で発動。発動時は攻撃力×2.5倍のダメージ。対象は60%の確率で解除に成功するとダメージを無効化できます。</li>
+          </ul>
+        </div>
+
+        <div id="rules-panel-formation" class="rules-tab-panel">
+          <h3>前衛・後衛の配置効果</h3>
+          <p>チーム編成時に各キャラクターを「前衛」か「後衛」に配置できます。</p>
+          <ul class="rules-list">
+            <li><strong>前衛</strong>: 受ける物理ダメージが-10%軽減されます。防御力も+10%強化されます。敵から狙われやすくなります。</li>
+            <li><strong>後衛</strong>: 敵から狙われにくくなります（狙われやすさが半減）。安全に攻撃・支援ができます。</li>
+          </ul>
+          <p><strong>戦略例:</strong> タンクを前衛に配置して敵の攻撃を集め、ヒーラーや遠距離物理を後衛に配置して安全に行動させるのが基本戦術です。</p>
+        </div>
+
+        <div id="rules-panel-damage" class="rules-tab-panel">
+          <h3>ダメージ計算の基本ルール</h3>
+          <p>すべての計算で小数点以下は<strong>切り捨て（Math.floor）</strong>され、常に整数で処理されます。</p>
+          <ul class="rules-list">
+            <li><strong>通常攻撃</strong>: 基礎ダメージ = DEF以上のATKの場合 → floor(DEF × 0.1 + (ATK - DEF))。ATK ≦ DEFの場合 → floor(ATK × 0.1)（最低1ダメージ）</li>
+            <li><strong>必殺技</strong>: ATKに必殺技倍率（通常1.5倍、遠距離物理は2.0倍）を乗算 → floor(ATK × 倍率) としてから通常計算</li>
+            <li><strong>防具貫通</strong>: 魔術師の場合、相手のDEFを50%無視 → floor(DEF × 0.5) を使って計算</li>
+            <li><strong>被ダメージ上昇デバフ</strong>: 最終ダメージに乗算します。例: 被ダメージ+30% → floor(ダメージ × 1.3)。防御力が0でもダメージが増加します。</li>
+            <li><strong>前衛軽減</strong>: 前衛のキャラは物理ダメージを10%軽減 → floor(ダメージ × 0.9)</li>
+            <li><strong>連携攻撃 (CROSS ATTACK)</strong>: 同じチームの複数人が同時に1人の敵を攻撃することがあります。2体同時攻撃の確率は10%。3体は5%、4体は2.5%と、人数が増えるほど確率が減ります。発動時は合計ダメージを一括算出します。</li>
+          </ul>
+          <p><strong>計算例:</strong> ATK 50、相手DEF 30、必殺技(1.5倍)の場合: floor(50 × 1.5) = 75 → floor(30 × 0.1 + (75 - 30)) = floor(3 + 45) = 48 ダメージ</p>
+          <p><strong>被ダメージ上昇例:</strong> 基礎48ダメージ、被ダメージ+30%デバフ適用時: floor(48 × 1.3) = 62 ダメージ</p>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <!-- 設定サイドバー -->
@@ -360,6 +460,11 @@
         <div class="form-group">
           <label>職業</label>
           <input type="text" id="edit-char-job" class="input-lg">
+        </div>
+        <div class="form-group">
+          <label>🎯 役職（ジョブ・パッシブ）</label>
+          <input type="hidden" id="edit-char-role" value="melee">
+          <div id="edit-role-card-grid" class="role-card-grid"></div>
         </div>
         <div class="form-group">
           <label>攻撃タイプ</label>

@@ -140,29 +140,35 @@ const ProfileManager = {
   },
 
   renderProfileList() {
-    const container = document.getElementById('profile-list');
-    if (!container) return;
+    const containers = [
+      document.getElementById('profile-list'),
+      document.getElementById('settings-profile-list')
+    ].filter(Boolean);
+
+    if (containers.length === 0) return;
 
     const profiles = this.getAllProfiles();
     const activeId = this.getActiveProfileId();
 
-    container.innerHTML = '';
-    profiles.forEach(p => {
+    const html = profiles.map(p => {
       const isActive = p.id === activeId;
-      const item = document.createElement('div');
-      item.className = 'profile-item' + (isActive ? ' profile-item-active' : '');
-      item.innerHTML = `
-        <div class="profile-item-info">
-          <span class="profile-item-name">${escapeHtml(p.name)}</span>
-          <span class="profile-item-meta">${p.characters.length}体のキャラクター</span>
-        </div>
-        <div class="profile-item-actions">
-          ${isActive ? '<span class="profile-active-badge">使用中</span>' : `<button class="btn-sm" onclick="switchToProfile('${p.id}')">切り替え</button>`}
-          <button class="btn-sm" onclick="renameProfilePrompt('${p.id}')">改名</button>
-          ${profiles.length > 1 ? `<button class="btn-sm btn-sm-danger" onclick="deleteProfileConfirm('${p.id}')">削除</button>` : ''}
+      return `
+        <div class="profile-item${isActive ? ' profile-item-active' : ''}">
+          <div class="profile-item-info">
+            <span class="profile-item-name">${escapeHtml(p.name)}</span>
+            <span class="profile-item-meta">${p.characters.length}体のキャラクター</span>
+          </div>
+          <div class="profile-item-actions">
+            ${isActive ? '<span class="profile-active-badge">使用中</span>' : `<button class="btn-sm" onclick="switchToProfile('${p.id}')">切り替え</button>`}
+            <button class="btn-sm" onclick="renameProfilePrompt('${p.id}')">改名</button>
+            ${profiles.length > 1 ? `<button class="btn-sm btn-sm-danger" onclick="deleteProfileConfirm('${p.id}')">削除</button>` : ''}
+          </div>
         </div>
       `;
-      container.appendChild(item);
+    }).join('');
+
+    containers.forEach(container => {
+      container.innerHTML = html;
     });
   }
 };

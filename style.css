@@ -842,6 +842,142 @@ textarea.input-lg {
   border-radius: 8px;
 }
 
+/* 役職カードセレクター */
+.role-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.role-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+.role-card:hover {
+  border-color: var(--action-color);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px -2px rgba(0,0,0,0.4);
+}
+.role-card-selected {
+  border-color: var(--accent-color);
+  background: rgba(245, 158, 11, 0.1);
+  box-shadow: 0 0 0 1px var(--accent-color), 0 6px 16px -4px rgba(245,158,11,0.3);
+}
+.role-card-icon {
+  font-size: 1.8rem;
+  flex-shrink: 0;
+  line-height: 1;
+  margin-top: 2px;
+}
+.role-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.role-card-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.role-card-desc {
+  font-size: 0.78rem;
+  color: var(--text-sub);
+  line-height: 1.45;
+}
+.role-card-passive {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent-color);
+  margin-top: 2px;
+}
+
+/* 前衛・後衛セレクター */
+.checklist-item-with-formation {
+  flex-wrap: wrap;
+}
+.checklist-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+.formation-select {
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  background: var(--bg-color);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ルール・計算仕様タブ */
+.rules-tab-nav {
+  display: flex;
+  gap: 8px;
+  margin: 15px 0;
+  flex-wrap: wrap;
+}
+.rules-tab-btn {
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-sub);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.rules-tab-btn:hover {
+  border-color: var(--primary-color);
+  color: var(--text-main);
+}
+.rules-tab-btn.active {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+.rules-tab-panel {
+  display: none;
+  padding: 15px;
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  line-height: 1.7;
+}
+.rules-tab-panel.active {
+  display: block;
+}
+.rules-tab-panel h3 {
+  font-size: 1rem;
+  color: var(--accent-color);
+  margin-bottom: 10px;
+}
+.rules-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rules-list li {
+  font-size: 0.88rem;
+  color: var(--text-main);
+  padding: 8px 12px;
+  background: rgba(0,0,0,0.2);
+  border-left: 3px solid var(--primary-color);
+  border-radius: 0 6px 6px 0;
+}
+
 /* スマホ調整 */
 @media (max-width: 600px) {
   .app-header h1 { font-size: 1rem; }
