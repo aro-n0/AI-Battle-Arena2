@@ -280,6 +280,7 @@
           </div>
 
           <button id="start-battle-btn" class="btn-primary btn-lg" style="width: 100%; margin-top: 15px;" onclick="runBattleSimulation(); playSE('battle_start')">⚔️ 自動バトル実行</button>
+          <button id="start-visual-battle-btn" class="btn-action btn-lg" style="width: 100%; margin-top: 10px;" onclick="openVisualBattle()">🎬 ビジュアルバトル観戦</button>
         </div>
 
         <!-- バトルログ ＆ AI小説 -->
@@ -292,7 +293,7 @@
 
             <div class="form-group">
               <label>生成スタイル（任意・自由入力）</label>
-              <input type="text" id="novel-style-input" class="input-lg" placeholder="例: 神話・英雄譚風���太宰治風 など">
+              <input type="text" id="novel-style-input" class="input-lg" placeholder="例: 神話・英雄譚風�����太宰治風 など">
             </div>
 
             <div class="context-tags">
@@ -492,7 +493,7 @@
           <ul class="rules-list">
             <li><strong>damage</strong>: 自分の攻撃力(ATK)の10%〜70%の追撃ダメージを与える（damage_upとは別処理）</li>
             <li><strong>heal</strong>: 自分または味方のHPを回復</li>
-            <li><strong>buff_atk / buff_def</strong>: 攻撃力・防御力を上昇（強力なため消費ポイントは重め：90pt以上）</li>
+            <li><strong>buff_atk / buff_def</strong>: 攻撃力・防御力を上昇（強力なため消費ポイント��重め：90pt以上）</li>
             <li><strong>debuff_def</strong>: 相手の防御力を低下</li>
             <li><strong>damage_up</strong>: 相手の被ダメージを上昇させるデバフ</li>
             <li><strong>stun</strong>: 相手をスタン状態にする（行動不可）</li>
@@ -633,6 +634,22 @@
     </div>
   </div>
 
+  <!-- ビジュアルバトル観戦モーダル -->
+  <div id="visual-battle-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content vb-modal-content">
+      <div class="modal-header-row">
+        <h2>🎬 ビジュアルバトル観戦</h2>
+        <div>
+          <button id="vb-skip-btn" class="btn-tag" onclick="skipVisualBattle()">⏩ スキップ</button>
+          <button class="btn-icon" onclick="closeVisualBattle()">✖</button>
+        </div>
+      </div>
+      <div id="vb-result-banner" class="vb-result-banner" style="display:none;"></div>
+      <div id="vb-board" class="vb-board"></div>
+      <div id="vb-log" class="vb-log">バトル開始！</div>
+    </div>
+  </div>
+
   <!-- Firebase CDN -->
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
@@ -657,6 +674,7 @@
   <script src="app.js"></script>
   <script src="gemini.js"></script>
   <script src="battle.js"></script>
+  <script src="visual-battle.js"></script>
   <script src="firebase-room.js"></script>
 
 </body>
