@@ -52,18 +52,18 @@
             <input type="password" id="room-pass-input" class="input-lg" placeholder="パスワード">
           </div>
           <div class="btn-group">
-            <button class="btn-primary btn-lg" onclick="createOrJoinRoom(true)">👑 部屋を作る (ホスト)</button>
-            <button class="btn-action btn-lg" onclick="createOrJoinRoom(false)">🚪 部屋に入る (参加)</button>
+            <button class="btn-primary btn-lg" onclick="createOrJoinRoom(true); playSE('click')">👑 部屋を作る (ホスト)</button>
+            <button class="btn-action btn-lg" onclick="createOrJoinRoom(false); playSE('click')">🚪 部屋に入る (参加)</button>
           </div>
           <div style="margin-top: 15px;">
-            <button id="leave-room-btn" class="btn-delete btn-lg" style="display:none;" onclick="leaveRoom()">🚪 ルームから退室</button>
+            <button id="leave-room-btn" class="btn-delete btn-lg" style="display:none;" onclick="leaveRoom(); playSE('click')">🚪 ルームから退室</button>
           </div>
 
           <!-- ホスト専用コントロール -->
           <div id="host-controls" style="display:none; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-color);">
             <h3 style="font-size:1rem; margin-bottom:10px; color:var(--accent-color);">👑 ホスト専用機能</h3>
             <p class="sub-text" style="margin-bottom:10px;">メンバーリストからBANできます。部屋削除は二重確認付きで安全です。</p>
-            <button class="btn-delete btn-lg" style="width:100%;" onclick="deleteRoom()">🗑️ この部屋を完全に削除</button>
+            <button class="btn-delete btn-lg" style="width:100%;" onclick="deleteRoom(); playSE('click')">🗑️ この部屋を完全に削除</button>
           </div>
         </div>
 
@@ -80,7 +80,7 @@
           <div id="chat-box" class="chat-box"></div>
           <div class="chat-input-group">
             <input type="text" id="chat-message-input" class="input-lg" placeholder="メッセージを入力...">
-            <button class="btn-primary btn-lg" onclick="sendChatMessage()">送信</button>
+            <button class="btn-primary btn-lg" onclick="sendChatMessage(); playSE('click')">送信</button>
           </div>
         </div>
       </div>
@@ -111,8 +111,9 @@
           </div>
 
           <div class="form-group">
-            <label>タグ (カンマ区切り)</label>
+            <label>タグ (カンマ区切りで複数タグ付け可)</label>
             <input type="text" id="char-tags" class="input-lg" placeholder="例: 炎, 剣士, 主人公">
+            <div id="tag-chips-create" class="tag-chips-container" style="margin-top:8px;"></div>
           </div>
 
           <div class="form-group">
@@ -221,9 +222,24 @@
         <h2>📚 キャラクターギャラリー</h2>
         <div class="search-bar">
           <input type="text" id="gallery-tag-search" class="input-lg" placeholder="名前・職業・タグで検索 (例: 炎, 剣士, 魔術師)" oninput="filterGallery()">
-          <button class="btn-action btn-lg" onclick="filterGallery()">検索</button>
-          <button class="btn-action btn-lg" onclick="resetGalleryFilter()">リセット</button>
+          <button class="btn-action btn-lg" onclick="filterGallery(); playSE('click')">検索</button>
+          <button class="btn-action btn-lg" onclick="resetGalleryFilter(); playSE('click')">リセット</button>
         </div>
+        <div class="gallery-toolbar">
+          <div class="sort-dropdown-wrap">
+            <label>並び替え:</label>
+            <select id="gallery-sort-select" class="formation-select" onchange="setGallerySort(this.value)">
+              <option value="created">作成順</option>
+              <option value="atk">攻撃力順</option>
+              <option value="def">防御力順</option>
+              <option value="hp">HP順</option>
+              <option value="spd">素早さ順</option>
+              <option value="fav">お気に入り優先</option>
+            </select>
+          </div>
+          <label class="fav-only-label"><input type="checkbox" id="fav-only-checkbox" onchange="renderCharacterGallery()"> ★お気に入りのみ</label>
+        </div>
+        <div id="tag-chips-gallery" class="tag-chips-container" style="margin-bottom:10px;"></div>
         <div id="character-list" class="character-grid"></div>
       </div>
     </section>
@@ -237,11 +253,15 @@
 
           <div class="preset-bar">
             <span>クイック名付け:</span>
-            <button class="btn-sm" onclick="setTeamPreset('1P チーム', '2P チーム')">デフォルト</button>
-            <button class="btn-sm" onclick="setTeamPreset('紅組', '白組')">🔴 vs ⚪</button>
-            <button class="btn-sm" onclick="setTeamPreset('勇者一行', '魔王軍')">⚔️ vs 😈</button>
-            <button class="btn-sm" onclick="setTeamPreset('光の陣営', '闇の陣営')">✨ vs 🌑</button>
+            <button class="btn-sm" onclick="setTeamPreset('1P チーム', '2P チーム'); playSE('click')">デフォルト</button>
+            <button class="btn-sm" onclick="setTeamPreset('紅組', '白組'); playSE('click')">🔴 vs ⚪</button>
+            <button class="btn-sm" onclick="setTeamPreset('勇者一行', '魔王軍'); playSE('click')">⚔️ vs 😈</button>
+            <button class="btn-sm" onclick="setTeamPreset('光の陣営', '闇の陣営'); playSE('click')">✨ vs 🌑</button>
+            <button class="btn-sm" onclick="setTeamPreset('天界', '魔界'); playSE('click')">☀️ vs 🌋</button>
+            <button class="btn-sm" onclick="setTeamPreset('生徒会', '不良グループ'); playSE('click')">🏫 vs 🚬</button>
           </div>
+
+          <p class="sub-text" style="margin-top:4px;">上5枠＝自動的に前衛、下5枠＝自動的に後衛として配置されます。</p>
 
           <div class="team-box">
             <div class="team-header-edit">
@@ -259,7 +279,7 @@
             <div id="p2-slots" class="team-slots-grid"></div>
           </div>
 
-          <button id="start-battle-btn" class="btn-primary btn-lg" style="width: 100%; margin-top: 15px;" onclick="runBattleSimulation()">⚔️ 自動バトル実行</button>
+          <button id="start-battle-btn" class="btn-primary btn-lg" style="width: 100%; margin-top: 15px;" onclick="runBattleSimulation(); playSE('battle_start')">⚔️ 自動バトル実行</button>
         </div>
 
         <!-- バトルログ ＆ AI小説 -->
@@ -277,11 +297,11 @@
 
             <div class="context-tags">
               <span>ワンタップ設定:</span>
-              <button class="btn-tag" onclick="setNovelStyle('神話・英雄譚風')">📜 神話・英雄譚風</button>
-              <button class="btn-tag" onclick="setNovelStyle('現代ライトノベル風')">📖 現代ライトノベル風</button>
-              <button class="btn-tag" onclick="setNovelStyle('熱血実況アナウンサー風')">🎤 熱血実況アナウンサー風</button>
-              <button class="btn-tag" onclick="setNovelStyle('夏目漱石風')">🖋️ 夏目漱石風</button>
-              <button class="btn-tag" onclick="setNovelStyle('太宰治風')">🍂 太宰治風</button>
+              <button class="btn-tag" onclick="setNovelStyle('神話・英雄譚風'); playSE('click')">📜 神話・英雄譚風</button>
+              <button class="btn-tag" onclick="setNovelStyle('現代ライトノベル風'); playSE('click')">📖 現代ライトノベル風</button>
+              <button class="btn-tag" onclick="setNovelStyle('熱血実況アナウンサー風'); playSE('click')">🎤 熱血実況アナウンサー風</button>
+              <button class="btn-tag" onclick="setNovelStyle('夏目漱石風'); playSE('click')">🖋️ 夏目漱石風</button>
+              <button class="btn-tag" onclick="setNovelStyle('太宰治風'); playSE('click')">🍂 太宰治風</button>
             </div>
 
             <div class="form-group">
@@ -291,13 +311,13 @@
 
             <div class="context-tags">
               <span>ワンタップ設定:</span>
-              <button class="btn-tag" onclick="appendNovelContext('雨の日の廃墟。雷鳴が轟く中での死闘。')">🌧️ 雨の廃墟</button>
-              <button class="btn-tag" onclick="appendNovelContext('夕暮れの決闘場。観客の大歓声の中で。')">🌅 夕暮れの闘技場</button>
-              <button class="btn-tag" onclick="appendNovelContext('長年の因縁に終止符を打つ宿命の対決。')">⚡ 宿命の対決</button>
-              <button class="btn-tag" onclick="appendNovelContext('コミカルでおふざけ満載のギャグ調の展開。')">🤪 ギャグ展開</button>
+              <button class="btn-tag" onclick="appendNovelContext('雨の日の廃墟。雷鳴が轟く中での死闘。'); playSE('click')">🌧️ 雨の廃墟</button>
+              <button class="btn-tag" onclick="appendNovelContext('夕暮れの決闘場。観客の大歓声の中で。'); playSE('click')">🌅 夕暮れの闘技場</button>
+              <button class="btn-tag" onclick="appendNovelContext('長年の因縁に終止符を打つ宿命の対決。'); playSE('click')">⚡ 宿命の対決</button>
+              <button class="btn-tag" onclick="appendNovelContext('コミカルでおふざけ満載のギャグ調の展開。'); playSE('click')">🤪 ギャグ展開</button>
             </div>
 
-            <button id="generate-story-btn" class="btn-action btn-lg" style="margin-top: 15px; width: 100%;">✍️ Geminiで小説を生成</button>
+            <button id="generate-story-btn" class="btn-action btn-lg" style="margin-top: 15px; width: 100%;" onclick="playSE('click')">✍️ Geminiで小説を生成</button>
           </div>
 
           <div id="novel-story-box" class="story-box" style="margin-top: 15px;">ここへAIが生成した小説が出力されます。</div>
@@ -324,8 +344,28 @@
             <h3 style="font-size:1rem; margin-bottom:10px;">🔐 Gemini API Key</h3>
             <div class="form-group">
               <input type="password" id="settings-gemini-api-key" class="input-lg" placeholder="AIzaSy...">
-              <button onclick="saveApiKeySettings()" class="btn-action btn-lg" style="margin-top:5px; width: 100%;">保存</button>
+              <button onclick="saveApiKeySettings(); playSE('click')" class="btn-action btn-lg" style="margin-top:5px; width: 100%;">保存</button>
               <span id="settings-api-key-status" style="font-size: 13px; display: block; margin-top: 5px;">未設定</span>
+            </div>
+
+            <!-- APIキー説明アコーディオン -->
+            <div class="api-guide-accordion" style="margin-top: 15px;">
+              <button class="accordion-header" onclick="toggleAccordion('api-guide-body'); playSE('click')">📖 APIキーについての説明を見る</button>
+              <div id="api-guide-body" class="accordion-body" style="display:none;">
+                <h4 style="margin-bottom:8px; color:var(--accent-color);">Gemini APIとは？</h4>
+                <p style="font-size:0.85rem; margin-bottom:10px;">Gemini APIはGoogleが提供するAIモデルです。本ゲームでは「キャラクターの特殊能力の自動生成」と「パトルログからの小説自動執筆」に利用しています。APIキーを設定するとこれらの機能が使えるようになります。</p>
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="btn-action btn-lg" style="display:block; text-align:center; text-decoration:none; margin-bottom:15px;">🔗 Google AI StudioでAPIキーを取得（別タブで開く）</a>
+                <h4 style="margin-bottom:8px; color:var(--accent-color);">🔑 APIキー取得手順</h4>
+                <ol class="api-steps">
+                  <li><strong>Google AI Studioにアクセス</strong>: 上のボタンからGoogle AI Studioを開きます（Googleアカウントが必要です）。</li>
+                  <li><strong>APIキーを作成</strong>: 左サイドバーの「Get API Key」または「Create API Key」をクリックします。</li>
+                  <li><strong>プロジェクトを選択</strong>: 既存のGoogle Cloudプロジェクトを選ぶか、新規作成します。</li>
+                  <li><strong>キーをコピー</strong>: 生成された「AIzaSy...」で始まる文字列をコピーします。</li>
+                  <li><strong>本ゲームに貼り付け</strong>: 上の入力欄にキーを貼り付け「保存」をクリックします。</li>
+                  <li><strong>完了</strong>: これでAI機能（スキル生成・小説生成）が使えるようになります。</li>
+                </ol>
+                <p style="font-size:0.8rem; color:var(--text-sub); margin-top:10px;">※ APIキーはあなたのブラウザのローカルストレージにのみ保存され、外部に送信されることはありません。</p>
+              </div>
             </div>
           </div>
         </div>

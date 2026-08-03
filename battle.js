@@ -422,11 +422,14 @@ function parseConditionType(conditionStr) {
   const everyMatch = c.match(/(\d+)\s*ターン毎|every\s*(\d+)/);
   if (everyMatch) return { type: SKILL_CONDITIONS.EVERY_N_TURNS, n: parseInt(everyMatch[1] || everyMatch[2]) };
 
-  const hpBelowMatch = c.match(/hp\s*(\d+)\s*%?\s*以下|hp\s*50%以下/);
-  if (hpBelowMatch) return { type: SKILL_CONDITIONS.HP_BELOW, threshold: parseInt(hpBelowMatch[1]) };
-
-  const hpAboveMatch = c.match(/hp\s*(\d+)\s*%?\s*以上/);
-  if (hpAboveMatch) return { type: SKILL_CONDITIONS.HP_ABOVE, threshold: parseInt(hpAboveMatch[1]) };
+  if (c.includes('hp') && (c.includes('以下') || c.includes('below'))) {
+    const m = c.match(/hp\s*(\d+)\s*%?/);
+    if (m && !isNaN(parseInt(m[1]))) return { type: SKILL_CONDITIONS.HP_BELOW, threshold: parseInt(m[1]) };
+  }
+  if (c.includes('hp') && (c.includes('以上') || c.includes('above'))) {
+    const m = c.match(/hp\s*(\d+)\s*%?/);
+    if (m && !isNaN(parseInt(m[1]))) return { type: SKILL_CONDITIONS.HP_ABOVE, threshold: parseInt(m[1]) };
+  }
 
   const turnAfterMatch = c.match(/(\d+)\s*ターン(?:以降|経過後|以上|後)/);
   if (turnAfterMatch) return { type: SKILL_CONDITIONS.TURN_AFTER, n: parseInt(turnAfterMatch[1]) };
@@ -529,40 +532,75 @@ function executeCustomSkill(attacker, target, skill, currentTurn, triggerEvent) 
 
   const effectType = (skill.effectType || 'damage').toLowerCase();
   const effectValue = Math.max(0, skill.effectValue || 0);
+  const valueType = (skill.valueType || 'flat').toLowerCase();
   const atkVal = attacker.stats.atk || 0;
+  const maxHpVal = attacker.stats.maxHp || attacker.stats.hp || 1;
+  const defVal = attacker.stats.def || 0;
+  const targetDef = (target && target.stats && target.stats.def) || 0;
+
+  const MAX_DAMAGE_CAP = Math.floor(atkVal * 3.0);
+  const MAX_BUFF_PCT = 50;
+  const MAX_HEAL_CAP = Math.floor(maxHpVal * 0.5);
 
   switch (effectType) {
     case 'damage':
-      result.bonusDamage = Math.floor(effectValue * (atkVal / 100 + 1));
+      if (valueType === 'percent') {
+        result.bonusDamage = Math.floor(atkVal * effectValue / 100);
+      } else {
+        result.bonusDamage = Math.floor(effectValue + atkVal * 0.5);
+      }
+      result.bonusDamage = Math.min(result.bonusDamage, MAX_DAMAGE_CAP);
       break;
     case 'heal':
-      result.heal = Math.floor(effectValue * (attacker.healMultiplier || 1));
+      if (valueType === 'percent') {
+        result.heal = Math.floor(maxHpVal * effectValue / 100);
+      } else {
+        result.heal = Math.floor(effectValue * (attacker.healMultiplier || 1));
+      }
+      result.heal = Math.min(result.heal, MAX_HEAL_CAP);
       break;
     case 'buff_atk':
-      result.buffAtk = effectValue;
+      if (valueType === 'percent') {
+        result.buffAtk = Math.floor(atkVal * Math.min(effectValue, MAX_BUFF_PCT) / 100);
+      } else {
+        result.buffAtk = Math.min(effectValue, Math.floor(atkVal * MAX_BUFF_PCT / 100));
+      }
       break;
     case 'buff_def':
-      result.buffDef = effectValue;
+      if (valueType === 'percent') {
+        result.buffDef = Math.floor(defVal * Math.min(effectValue, MAX_BUFF_PCT) / 100);
+      } else {
+        result.buffDef = Math.min(effectValue, Math.floor(defVal * MAX_BUFF_PCT / 100));
+      }
       break;
     case 'debuff_def':
-      result.debuffDef = effectValue;
+      if (valueType === 'percent') {
+        result.debuffDef = Math.floor(targetDef * Math.min(effectValue, MAX_BUFF_PCT) / 100);
+      } else {
+        result.debuffDef = Math.min(effectValue, Math.floor(targetDef * MAX_BUFF_PCT / 100));
+      }
       break;
     case 'damage_up':
-      result.damageUp = Math.min(2.0, effectValue / 100);
+      result.damageUp = Math.min(1.0, effectValue / 100);
       break;
     case 'stun':
       result.stun = true;
-      result.bonusDamage = Math.floor(effectValue * 0.5);
+      result.bonusDamage = Math.min(Math.floor(effectValue * 0.3), MAX_DAMAGE_CAP);
       break;
     case 'combo':
-      result.bonusDamage = Math.floor(effectValue * 2 * (atkVal / 100 + 1));
+      if (valueType === 'percent') {
+        result.bonusDamage = Math.floor(atkVal * effectValue / 100 * 2);
+      } else {
+        result.bonusDamage = Math.floor(effectValue * 2 + atkVal * 0.3);
+      }
+      result.bonusDamage = Math.min(result.bonusDamage, MAX_DAMAGE_CAP);
       break;
     case 'lifesteal':
-      result.bonusDamage = Math.floor(effectValue * (atkVal / 100 + 1));
-      result.heal = Math.floor(result.bonusDamage * 0.5);
+      result.bonusDamage = Math.min(Math.floor((atkVal + effectValue) * 0.5), MAX_DAMAGE_CAP);
+      result.heal = Math.min(Math.floor((atkVal + effectValue) * 0.3), MAX_HEAL_CAP);
       break;
     default:
-      result.bonusDamage = Math.floor(effectValue * (atkVal / 100 + 1));
+      result.bonusDamage = Math.min(Math.floor(effectValue + atkVal * 0.5), MAX_DAMAGE_CAP);
   }
 
   return result;
@@ -629,8 +667,7 @@ function runBattleSimulation() {
     return teamIds.map((id, index) => {
       const c = charList.find(char => char.id === id);
       if (!c) return null;
-      const formationEl = document.getElementById(`formation-${teamLabel}-${id}`);
-      const formation = formationEl ? formationEl.value : 'front';
+      const formation = index < 5 ? 'front' : 'back';
       const hpVal = c.stats.maxHp || c.stats.hp || 0;
       const fighter = {
         ...JSON.parse(JSON.stringify(c)),
@@ -815,6 +852,28 @@ function runBattleSimulation() {
         continue;
       }
 
+      // on_damage_taken スキル判定（ダメージ計算直前）
+      if (target.customSkill && ROLES[target.role]?.canUseSkill && !target.skillActivatedThisTurn) {
+        const dtResult = executeCustomSkill(target, attacker, target.customSkill, turn, 'on_damage_taken');
+        if (dtResult.activated) {
+          target.skillActivatedThisTurn = true;
+          if (typeof playSE === 'function') playSE('skill');
+          logs.push(`🛡️ [${target.team}] ${target.name} の「${dtResult.skillName}」が被弾時に発動！`);
+          if (dtResult.buffDef > 0) {
+            target.stats.def = (target.stats.def || 0) + dtResult.buffDef;
+            logs.push(`🛡️ 防御力 +${dtResult.buffDef}！`);
+          }
+          if (dtResult.buffAtk > 0) {
+            target.stats.atk = (target.stats.atk || 0) + dtResult.buffAtk;
+            logs.push(`⚡ 攻撃力 +${dtResult.buffAtk}！`);
+          }
+          if (dtResult.heal > 0) {
+            target.currentHp = Math.min(target.stats.maxHp || target.stats.hp, target.currentHp + dtResult.heal);
+            logs.push(`💚 HPを ${dtResult.heal} 回復！ (残HP: ${target.currentHp})`);
+          }
+        }
+      }
+
       const isSpecial = Math.random() < 0.10;
       const skillName = isSpecial ? (attacker.specialSkill || '奥義') : (attacker.normalSkill || '通常攻撃');
       let damage = calculateDamage(attacker, target, isSpecial);
@@ -852,21 +911,6 @@ function runBattleSimulation() {
         }
       }
 
-      // on_damage_taken スキル判定（被弾側）
-      if (target.currentHp > 0 && target.customSkill && ROLES[target.role]?.canUseSkill && !target.skillActivatedThisTurn) {
-        const dtResult = executeCustomSkill(target, attacker, target.customSkill, turn, 'on_damage_taken');
-        if (dtResult.activated) {
-          logs.push(`🛡️ [${target.team}] ${target.name} の「${dtResult.skillName}」が被弾時に発動！`);
-          if (dtResult.buffDef > 0) {
-            target.stats.def = (target.stats.def || 0) + dtResult.buffDef;
-            logs.push(`🛡️ 防御力 +${dtResult.buffDef}！`);
-          }
-          if (dtResult.heal > 0) {
-            target.currentHp = Math.min(target.stats.maxHp || target.stats.hp, target.currentHp + dtResult.heal);
-            logs.push(`💚 HPを ${dtResult.heal} 回復！ (残HP: ${target.currentHp})`);
-          }
-        }
-      }
     }
 
     turn++;

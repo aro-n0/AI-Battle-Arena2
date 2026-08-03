@@ -135,20 +135,28 @@ ${roleConstraint}
 {
   "name": "スキル名",
   "description": "スキルの説明文（1〜2文）",
-  "condition": "発動条件（以下のいずれかの形式で指定: 常時, バトル開始時, 攻撃開始時, 被弾時, 撃破時, Nターン毎, HP XX%以下, HP XX%以上, Nターン以降, Nターン以内, 先制/第1ターン, 時止め）",
+  "condition": "発動条件（以下のいずれかの形式で指定: 常時, バトル開始時, 攻撃開始時, 被弾時, 撃破時, Nターン毎, HP XX%以下, HP XX%以上, Nターン以降, Nターン以内, 先制/第1ターン, 時止め）※「XX」には必ず具体的な数値（例: 30, 50）を入れてください。プレースホルダーは厳禁です。",
   "probability": 発動確率の数値（0〜100）,
   "target": "対象（例: 単体, 全体, 自分, 味方全体）",
   "effectType": "効果種別（damage, heal, buff_atk, buff_def, debuff_def, damage_up, stun, combo, lifesteal のいずれか）",
-  "effectValue": 効果量の数値,
+  "valueType": "効果量のタイプ（"flat" または "percent"）。flatは固定数値、percentは割合（最大HPや攻撃力に対する%）を表します。",
+  "effectValue": 効果量の数値（valueTypeがflatの場合は固定値、percentの場合は割合の数値）,
   "duration": 持続ターン数の数値（0なら即時）,
   "cost": 消費ポイント（80以上の整数）
 }
 3. 3つの候補は、コストや効果の強さ・発動条件が異なるバリエーションにしてください。
 4. 上記「役職制約」に違反するスキル（例: ヒーラーに攻撃スキル）は絶対に生成しないでください。
 5. 必ずJSON配列のみを出力してください。説明文やマークダウンは不要です。
+6. 【パワーバランス制約】ステータス合計は200ptのため、以下の上限を厳守してください:
+   - damage/combo効果量: 攻撃力の300%を超えないこと（effectValueがflatの場合は攻撃力+固定値の合計が攻撃力の3倍以下）
+   - buff_atk/buff_def/debuff_def: 効果は対象ステータスの50%まで（percentの場合は50以下）
+   - heal: 最大HPの50%を超えないこと
+   - damage_up: 100%以下（effectValueは100以下）
+   - 1ターンで敵を即死させるような極端な数値は生成しないでください
+7. HP条件を指定する場合は、condition文字列内の「XX」を必ず具体的な数値（例: 「HP 30%以下」）に置き換えてください。未決定のプレースホルダー文字列は絶対に出力しないでください。
 
 出力例:
-[{"name":"紅蓮の剣舞","description":"炎を纏った剣で全体攻撃","condition":"常時","probability":80,"target":"全体","effectType":"damage","effectValue":120,"duration":0,"cost":80},{...},{...}]`;
+[{"name":"紅蓮の剣舞","description":"炎を纏った剣で全体攻撃","condition":"常時","probability":80,"target":"全体","effectType":"damage","valueType":"flat","effectValue":80,"duration":0,"cost":80},{...},{...}]`;
 
   try {
     const response = await fetch(`${GEMINI_BASE_URL}?key=${apiKey}`, {
@@ -187,18 +195,22 @@ ${roleConstraint}
       throw new Error('スキル候補が生成されませんでした');
     }
 
-    candidates = candidates.map(c => ({
-      name: c.name || '名称不明',
-      description: c.description || '',
-      condition: c.condition || '常時',
-      probability: Math.min(100, Math.max(0, c.probability || 100)),
-      target: c.target || '単体',
-      effectType: c.effectType || 'damage',
-      damageUp: c.effectType === 'damage_up' ? Math.min(100, Math.floor(c.effectValue || 30)) : 0,
-      effectValue: Math.max(0, c.effectValue || 0),
-      duration: Math.max(0, c.duration || 0),
-      cost: Math.max(80, Math.floor(c.cost || 80))
-    }));
+    candidates = candidates.map(c => {
+      const condition = (c.condition || '常時').replace(/XX/gi, '30').replace(/\bxx\b/gi, '30');
+      return {
+        name: c.name || '名称不明',
+        description: c.description || '',
+        condition: condition,
+        probability: Math.min(100, Math.max(0, c.probability || 100)),
+        target: c.target || '単体',
+        effectType: c.effectType || 'damage',
+        valueType: (c.valueType === 'percent') ? 'percent' : 'flat',
+        damageUp: c.effectType === 'damage_up' ? Math.min(100, Math.floor(c.effectValue || 30)) : 0,
+        effectValue: Math.max(0, Math.floor(c.effectValue || 0)),
+        duration: Math.max(0, c.duration || 0),
+        cost: Math.max(80, Math.floor(c.cost || 80))
+      };
+    });
 
     // 役職制約の事後フィルター: ヒーラーに攻撃スキルが混ざった場合は除外
     if (roleKey === 'healer') {
@@ -212,6 +224,7 @@ ${roleConstraint}
           probability: 100,
           target: '味方全体',
           effectType: 'heal',
+          valueType: 'flat',
           effectValue: 100,
           duration: 0,
           cost: 80,

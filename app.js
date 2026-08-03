@@ -65,6 +65,8 @@ function switchTab(tabId, event) {
   if (typeof playSE === 'function') playSE('click');
 
   if (tabId === 'create' && typeof renderRoleSelector === 'function') renderRoleSelector('');
+  if (tabId === 'create' && typeof renderTagChips === 'function') renderTagChips();
+  if (tabId === 'gallery' && typeof renderTagChips === 'function') renderTagChips();
   if (tabId === 'battle' && typeof renderTeamSlots === 'function') renderTeamSlots();
   if (tabId === 'settings') {
     if (typeof ProfileManager !== 'undefined' && ProfileManager.renderProfileList) {
@@ -245,11 +247,13 @@ function renderSkillCandidates(candidates, prefix, selectedIndex) {
     const card = document.createElement('div');
     card.className = 'skill-candidate-card' + (i === selectedIndex ? ' selected' : '');
     card.onclick = () => { if (typeof playSE === 'function') playSE('click'); selectSkillCandidate(i, prefix); };
+    const valueTypeLabel = skill.valueType === 'percent' ? '%' : '';
     const tags = [
       `対象: ${skill.target || '単体'}`,
       `確率: ${skill.probability || 100}%`,
       `効果: ${skill.effectType || 'ダメージ'}`,
-      `効果量: ${skill.effectValue || 0}`,
+      `効果量: ${skill.effectValue || 0}${valueTypeLabel}`,
+      `タイプ: ${skill.valueType === 'percent' ? '割合' : '固定'}`,
       skill.duration ? `持続: ${skill.duration}T` : null,
       `条件: ${skill.condition || '常時'}`
     ].filter(t => t);
@@ -342,6 +346,10 @@ function getCharFormData(prefix = '') {
     customSkill: skill || null,
     author: localPlayerName
   };
+
+  if (skill && !skill.valueType) {
+    skill.valueType = 'flat';
+  }
 }
 
 /* ===================================================
@@ -362,7 +370,13 @@ function filterCharacters(query) {
     const job = (c.job || '').toLowerCase();
     const tags = Array.isArray(c.tags) ? c.tags.join(' ').toLowerCase() : '';
     return name.includes(q) || job.includes(q) || tags.includes(q);
-  });
+});
+}
+
+function filterCharactersWithFav(query, favOnly) {
+  let list = filterCharacters(query);
+  if (favOnly) list = list.filter(c => isFavorite(c.id));
+  return getSortedCharList(list);
 }
 
 function resetGalleryFilter() {
@@ -401,12 +415,12 @@ function renderTeamSlots() {
     if (!container) return;
     container.innerHTML = '';
     const teamArr = getTeamArray(team);
-    const formations = getFormationMap(team);
 
     for (let i = 0; i < MAX_TEAM_SIZE; i++) {
       const charId = teamArr[i];
       const slot = document.createElement('div');
       slot.className = 'team-slot';
+      const autoFormation = i < 5 ? '前衛' : '後衛';
 
       if (charId) {
         const charList = getCharList();
@@ -417,12 +431,8 @@ function renderTeamSlots() {
           slot.innerHTML = `
             <div class="team-slot-info">
               <span class="team-slot-name">${escapeHtml(char.name)}</span>
-              <span class="team-slot-role">${escapeHtml(roleLabel)}</span>
+              <span class="team-slot-role">${escapeHtml(roleLabel)} / ${autoFormation}</span>
             </div>
-            <select class="formation-select" onchange="setFormation('${team}', '${charId}', this.value)">
-              <option value="front" ${formations[charId] !== 'back' ? 'selected' : ''}>前衛</option>
-              <option value="back" ${formations[charId] === 'back' ? 'selected' : ''}>後衛</option>
-            </select>
             <button class="team-slot-remove" onclick="removeFromTeam('${team}', ${i})">✖</button>
           `;
         } else {
@@ -526,9 +536,87 @@ function removeFromTeam(team, slotIndex) {
   renderTeamSlots();
 }
 
-function setFormation(team, charId, formation) {
-  const formations = getFormationMap(team);
-  formations[charId] = formation;
+/* ===================================================
+   お気に入り・タグチップ・ソート
+   =================================================== */
+function getFavoriteIds() {
+  try { return JSON.parse(localStorage.getItem('char_favorites') || '[]'); } catch (e) { return []; }
+}
+
+function toggleFavorite(charId) {
+  let favs = getFavoriteIds();
+  if (favs.includes(charId)) {
+    favs = favs.filter(id => id !== charId);
+  } else {
+    favs.push(charId);
+  }
+  localStorage.setItem('char_favorites', JSON.stringify(favs));
+  renderCharacterGallery();
+  if (typeof playSE === 'function') playSE('click');
+}
+
+function isFavorite(charId) {
+  return getFavoriteIds().includes(charId);
+}
+
+function getAllExistingTags() {
+  const charList = getCharList();
+  const tagSet = new Set();
+  charList.forEach(c => {
+    if (Array.isArray(c.tags)) c.tags.forEach(t => tagSet.add(t));
+  });
+  return Array.from(tagSet).sort();
+}
+
+function renderTagChips() {
+  const containers = [document.getElementById('tag-chips-create'), document.getElementById('tag-chips-gallery')];
+  const tags = getAllExistingTags();
+  containers.forEach(container => {
+    if (!container) return;
+    if (tags.length === 0) { container.innerHTML = '<span class="tag-chip-empty">まだタグがありません</span>'; return; }
+    container.innerHTML = tags.map(t => `<button class="tag-chip" onclick="applyTagToSearch('${escapeHtml(t)}')">${escapeHtml(t)}</button>`).join('');
+  });
+}
+
+function applyTagToSearch(tag) {
+  const searchInput = document.getElementById('gallery-tag-search');
+  if (searchInput) {
+    const current = searchInput.value.trim();
+    if (current && !current.endsWith(',')) {
+      searchInput.value = current + ' ' + tag;
+    } else {
+      searchInput.value = (current ? current + ' ' : '') + tag;
+    }
+    filterGallery();
+  }
+  if (typeof playSE === 'function') playSE('click');
+}
+
+let _gallerySortKey = 'created';
+
+function setGallerySort(key) {
+  _gallerySortKey = key;
+  renderCharacterGallery();
+  if (typeof playSE === 'function') playSE('click');
+}
+
+function getSortedCharList(list) {
+  const arr = [...list];
+  switch (_gallerySortKey) {
+    case 'atk': return arr.sort((a, b) => (b.stats.atk || 0) - (a.stats.atk || 0));
+    case 'def': return arr.sort((a, b) => (b.stats.def || 0) - (a.stats.def || 0));
+    case 'hp': return arr.sort((a, b) => (b.stats.maxHp || b.stats.hp || 0) - (a.stats.maxHp || a.stats.hp || 0));
+    case 'spd': return arr.sort((a, b) => (b.stats.spd || b.stats.eva || 0) - (a.stats.spd || a.stats.eva || 0));
+    case 'fav': return arr.sort((a, b) => (isFavorite(b.id) ? 1 : 0) - (isFavorite(a.id) ? 1 : 0));
+    case 'created':
+    default: return arr.sort((a, b) => (b.id || '').localeCompare(a.id || ''));
+  }
+}
+
+function filterGalleryFavoritesOnly() {
+  const favs = getFavoriteIds();
+  const all = getCharList();
+  return all.filter(c => favs.includes(c.id));
 }
 
 function syncTeamSlots() {
@@ -546,6 +634,12 @@ function switchRulesTab(tabId, event) {
   const panel = document.getElementById(`rules-panel-${tabId}`);
   if (panel) panel.classList.add('active');
   if (typeof playSE === 'function') playSE('click');
+}
+
+function toggleAccordion(bodyId) {
+  const body = document.getElementById(bodyId);
+  if (!body) return;
+  body.style.display = body.style.display === 'none' ? 'block' : 'none';
 }
 
 /* ===================================================
@@ -637,10 +731,13 @@ function renderCharacterGallery() {
 
   gallery.innerHTML = '';
   const query = document.getElementById('gallery-tag-search')?.value || '';
-  const charList = filterCharacters(query);
+  const favOnly = document.getElementById('fav-only-checkbox')?.checked || false;
+  const charList = filterCharactersWithFav(query, favOnly);
+
+  renderTagChips();
 
   if (!charList || charList.length === 0) {
-    gallery.innerHTML = '<p style="color:var(--text-sub); text-align:center; padding:30px;">まだキャラクターが作成されていません。</p>';
+    gallery.innerHTML = '<p style="color:var(--text-sub); text-align:center; padding:30px;">該当するキャラクターがいません。</p>';
     return;
   }
 
@@ -658,6 +755,7 @@ function renderCharacterGallery() {
     const spdPct = Math.min(100, Math.floor(displaySpd / 1.5));
 
     const roleLabel = (typeof getRoleLabel === 'function') ? getRoleLabel(c.role) : '';
+    const favStar = isFavorite(c.id) ? '★' : '☆';
     const card = document.createElement('div');
     card.className = 'char-card';
     card.innerHTML = `
@@ -666,9 +764,9 @@ function renderCharacterGallery() {
           <h3 class="char-card-name">${escapeHtml(c.name)}</h3>
           <span class="char-card-job">${escapeHtml(c.job || '冒険者')}</span>
         </div>
-        <span class="char-card-type">${escapeHtml(roleLabel)}</span>
+        <span class="char-card-fav" onclick="event.stopPropagation(); toggleFavorite('${c.id}')">${favStar}</span>
       </div>
-      <div class="char-card-tags">${tagBadges || '<span class="tag-empty">タグなし</span>'}</div>
+      <div class="char-card-tags">${tagBadges || '<span class="tag-empty">タグなし</span>'} <span class="char-card-type-badge">${escapeHtml(roleLabel)}</span></div>
       <div class="char-card-stats">
         <div class="stat-bar-wrap">
           <span class="stat-bar-label">❤️ HP</span>
