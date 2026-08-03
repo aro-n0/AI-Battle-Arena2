@@ -668,11 +668,31 @@ function renderRoleSelector(prefix = '') {
   });
 }
 
+function skillViolatesRole(skill, roleKey) {
+  if (!skill) return false;
+  const effect = (skill.effectType || '').toLowerCase();
+  // ヒーラーは攻撃系スキル(damage, combo, lifesteal, stun)を持てない
+  if (roleKey === 'healer') {
+    return ['damage', 'combo', 'lifesteal', 'stun'].includes(effect);
+  }
+  return false;
+}
+
 function selectRole(roleKey, prefix = '') {
   const hiddenInput = document.getElementById(`${prefix}char-role`);
   if (hiddenInput) hiddenInput.value = roleKey;
   renderRoleSelector(prefix);
   if (typeof applyRoleFormRestrictions === 'function') applyRoleFormRestrictions(prefix);
+
+  // 役職変更時、既に設定済みの特殊能力が新しい役職の制約に違反していないか自動再検証。
+  // 違反があれば特殊能力をリセットし、再設定を要求する。
+  const currentSkill = prefix === 'edit-' ? selectedEditSkillData : selectedSkillData;
+  if (skillViolatesRole(currentSkill, roleKey)) {
+    if (typeof clearSkillSelection === 'function') clearSkillSelection(prefix);
+    const roleName = (typeof getRoleLabel === 'function') ? getRoleLabel(roleKey) : roleKey;
+    alert(`設定中の特殊能力は「${roleName}」の役職制約に違反するため、リセットしました。\n特殊能力を再設定してください。`);
+  }
+
   if (typeof playSE === 'function') playSE('click');
 }
 

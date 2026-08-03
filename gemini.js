@@ -91,6 +91,51 @@ function getRoleConstraintText(roleKey) {
   }
 }
 
+/* ===================================================
+   効果対象(targetSide) / 効果対象範囲(targetScope) 正規化
+   =================================================== */
+function normalizeTargetSide(rawSide, rawTarget, effectType) {
+  const s = (rawSide || '').toString().toLowerCase();
+  if (s === 'enemy' || s === 'ally' || s === 'self') return s;
+
+  const t = (rawTarget || '').toString();
+  if (/自分|self/i.test(t)) return 'self';
+  if (/味方|ally|自軍|仲間/i.test(t)) return 'ally';
+  if (/敵|enemy|相手/i.test(t)) return 'enemy';
+
+  // ラベルから判別できない場合は効果種別で推定
+  const e = (effectType || '').toLowerCase();
+  if (e === 'heal') return 'ally';
+  if (e === 'buff_atk' || e === 'buff_def') return 'self';
+  return 'enemy';
+}
+
+function normalizeTargetScope(rawScope, rawTarget) {
+  const s = (rawScope || '').toString().toLowerCase();
+  if (s === 'single' || s === 'all' || s === 'front' || s === 'back') return s;
+  const randMatch = s.match(/random_(\d+)/);
+  if (randMatch) return `random_${Math.min(4, Math.max(2, parseInt(randMatch[1]) || 2))}`;
+
+  const t = (rawTarget || '').toString();
+  if (/全体|all|全員/i.test(t)) return 'all';
+  if (/前衛|front/i.test(t)) return 'front';
+  if (/後衛|back/i.test(t)) return 'back';
+  const rt = t.match(/ランダム\s*(\d+)/);
+  if (rt) return `random_${Math.min(4, Math.max(2, parseInt(rt[1]) || 2))}`;
+  return 'single';
+}
+
+function buildTargetLabel(side, scope) {
+  const sideLabel = side === 'ally' ? '味方' : side === 'self' ? '自分' : '敵';
+  if (side === 'self') return '自分';
+  let scopeLabel = '単体';
+  if (scope === 'all') scopeLabel = '全体';
+  else if (scope === 'front') scopeLabel = '前衛';
+  else if (scope === 'back') scopeLabel = '後衛';
+  else if (typeof scope === 'string' && scope.startsWith('random_')) scopeLabel = `ランダム${scope.split('_')[1]}体`;
+  return `${sideLabel}${scopeLabel}`;
+}
+
 async function generateSkillCandidates(prefix = '') {
   const apiKey = localStorage.getItem('gemini_api_key');
   if (!apiKey) {
@@ -131,13 +176,15 @@ ${roleConstraint}
 
 【ルール】
 1. 各スキルの「消費ポイント（cost）」は80以上の整数値で、能力の強さに応じて80〜150の範囲で評価してください。80ptが最小基準です。
+   ただし攻撃力アップ・防御力アップなどのバフ（effectTypeがbuff_atk / buff_def）は非常に強力なため、重いコストを割り当て、必ず90〜150の範囲（最低でも90pt以上）で評価してください。
 2. 各スキルは以下のJSON構造で出力してください:
 {
   "name": "スキル名",
   "description": "スキルの説明文（1〜2文）",
   "condition": "発動条件（以下のいずれかの形式で指定: 常時, バトル開始時, 攻撃開始時, 被弾時, 撃破時, Nターン毎, HP XX%以下, HP XX%以上, Nターン以降, Nターン以内, 先制/第1ターン, 時止め）※「XX」には必ず具体的な数値（例: 30, 50）を入れてください。プレースホルダーは厳禁です。",
   "probability": 発動確率の数値（0〜100）,
-  "target": "対象（例: 単体, 全体, 自分, 味方全体）",
+  "targetSide": "効果対象（enemy=敵 / ally=味方 / self=自分 のいずれか）",
+  "targetScope": "効果対象範囲（single=単体 / all=全体 / front=前衛 / back=後衛 / random_N=ランダムN体（Nは2〜4の整数）のいずれか）",
   "effectType": "効果種別（damage, heal, buff_atk, buff_def, debuff_def, damage_up, stun, combo, lifesteal のいずれか）",
   "valueType": "効果量のタイプ（"flat" または "percent"）。flatは固定数値、percentは割合（最大HPや攻撃力に対する%）を表します。",
   "effectValue": 効果量の数値（valueTypeがflatの場合は固定値、percentの場合は割合の数値）,
@@ -156,7 +203,7 @@ ${roleConstraint}
 7. HP条件を指定する場合は、condition文字列内の「XX」を必ず具体的な数値（例: 「HP 30%以下」）に置き換えてください。未決定のプレースホルダー文字列は絶対に出力しないでください。
 
 出力例:
-[{"name":"紅蓮の剣舞","description":"炎を纏った剣で全体攻撃","condition":"常時","probability":80,"target":"全体","effectType":"damage","valueType":"flat","effectValue":80,"duration":0,"cost":80},{...},{...}]`;
+[{"name":"紅蓮の剣舞","description":"炎を纏った剣で全体攻撃","condition":"常時","probability":80,"target":"全���","effectType":"damage","valueType":"flat","effectValue":80,"duration":0,"cost":80},{...},{...}]`;
 
   try {
     const response = await fetch(`${GEMINI_BASE_URL}?key=${apiKey}`, {
@@ -197,18 +244,26 @@ ${roleConstraint}
 
     candidates = candidates.map(c => {
       const condition = (c.condition || '常時').replace(/XX/gi, '30').replace(/\bxx\b/gi, '30');
+      const effectType = c.effectType || 'damage';
+      const targetSide = normalizeTargetSide(c.targetSide, c.target, effectType);
+      const targetScope = normalizeTargetScope(c.targetScope, c.target);
+      // バフ(buff_atk / buff_def)は重いコスト（最低90pt）を割り当てる
+      const isBuff = (effectType === 'buff_atk' || effectType === 'buff_def');
+      const minCost = isBuff ? 90 : 80;
       return {
         name: c.name || '名称不明',
         description: c.description || '',
         condition: condition,
         probability: Math.min(100, Math.max(0, c.probability || 100)),
-        target: c.target || '単体',
-        effectType: c.effectType || 'damage',
+        targetSide: targetSide,
+        targetScope: targetScope,
+        target: buildTargetLabel(targetSide, targetScope), // 表示用ラベル
+        effectType: effectType,
         valueType: (c.valueType === 'percent') ? 'percent' : 'flat',
         damageUp: c.effectType === 'damage_up' ? Math.min(100, Math.floor(c.effectValue || 30)) : 0,
         effectValue: Math.max(0, Math.floor(c.effectValue || 0)),
         duration: Math.max(0, c.duration || 0),
-        cost: Math.max(80, Math.floor(c.cost || 80))
+        cost: Math.max(minCost, Math.floor(c.cost || minCost))
       };
     });
 
@@ -222,6 +277,8 @@ ${roleConstraint}
           description: '味方全体のHPを回復する',
           condition: '常時',
           probability: 100,
+          targetSide: 'ally',
+          targetScope: 'all',
           target: '味方全体',
           effectType: 'heal',
           valueType: 'flat',

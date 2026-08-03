@@ -292,7 +292,7 @@
 
             <div class="form-group">
               <label>生成スタイル（任意・自由入力）</label>
-              <input type="text" id="novel-style-input" class="input-lg" placeholder="例: 神話・英雄譚風、太宰治風 など">
+              <input type="text" id="novel-style-input" class="input-lg" placeholder="例: 神話・英雄譚風���太宰治風 など">
             </div>
 
             <div class="context-tags">
@@ -490,14 +490,19 @@
           </ul>
           <h4 style="margin-top:12px; color:var(--accent-color); font-size:0.9rem;">効果種別</h4>
           <ul class="rules-list">
-            <li><strong>damage</strong>: 追加ダメージを与える</li>
+            <li><strong>damage</strong>: 自分の攻撃力(ATK)の10%〜70%の追撃ダメージを与える（damage_upとは別処理）</li>
             <li><strong>heal</strong>: 自分または味方のHPを回復</li>
-            <li><strong>buff_atk / buff_def</strong>: 攻撃力・防御力を上昇</li>
+            <li><strong>buff_atk / buff_def</strong>: 攻撃力・防御力を上昇（強力なため消費ポイントは重め：90pt以上）</li>
             <li><strong>debuff_def</strong>: 相手の防御力を低下</li>
             <li><strong>damage_up</strong>: 相手の被ダメージを上昇させるデバフ</li>
             <li><strong>stun</strong>: 相手をスタン状態にする（行動不可）</li>
-            <li><strong>combo</strong>: 連続攻撃で大ダメージ</li>
-            <li><strong>lifesteal</strong>: ダメージの半分をHP吸収</li>
+            <li><strong>combo</strong>: 2〜4回連続攻撃。攻撃回数に応じて1発の威力が減衰し、合計は通常攻撃の1.2〜1.4倍程度</li>
+            <li><strong>lifesteal</strong>: 自分の攻撃力や効果量に応じたHPを吸収・回復する</li>
+          </ul>
+          <h4 style="margin-top:12px; color:var(--accent-color); font-size:0.9rem;">効果対象・効果対象範囲</h4>
+          <ul class="rules-list">
+            <li><strong>効果対象 (targetSide)</strong>: enemy（敵） / ally（味方） / self（自分）</li>
+            <li><strong>効果対象範囲 (targetScope)</strong>: single（単体） / all（全体） / front（前衛） / back（後衛） / random_N（ランダムN体）</li>
           </ul>
           <p style="margin-top:10px;"><strong>重要:</strong> 特殊能力が発動したターンは、必殺技や通常攻撃はキャンセルされ、スキルの効果のみが処理されます（計算バグ防止）。</p>
           <p style="margin-top:8px;"><strong>役職制約:</strong> ヒーラーには攻撃系スキル（damage, combo, lifesteal, stun）が割り当てられません。AIは選択された役職の制約に従ったスキルのみを生成します。</p>

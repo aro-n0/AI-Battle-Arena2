@@ -543,14 +543,14 @@ function executeCustomSkill(attacker, target, skill, currentTurn, triggerEvent) 
   const MAX_HEAL_CAP = Math.floor(maxHpVal * 0.5);
 
   switch (effectType) {
-    case 'damage':
-      if (valueType === 'percent') {
-        result.bonusDamage = Math.floor(atkVal * effectValue / 100);
-      } else {
-        result.bonusDamage = Math.floor(effectValue + atkVal * 0.5);
-      }
+    case 'damage': {
+      // 追加ダメージは「自分の攻撃力(ATK)の10%〜70%の追撃」として独立処理する。
+      // 被ダメージ上昇デバフ(damage_up)とは完全に別処理。
+      const dmgPct = Math.min(70, Math.max(10, effectValue || 10));
+      result.bonusDamage = Math.floor(atkVal * dmgPct / 100);
       result.bonusDamage = Math.min(result.bonusDamage, MAX_DAMAGE_CAP);
       break;
+    }
     case 'heal':
       if (valueType === 'percent') {
         result.heal = Math.floor(maxHpVal * effectValue / 100);
@@ -587,14 +587,18 @@ function executeCustomSkill(attacker, target, skill, currentTurn, triggerEvent) 
       result.stun = true;
       result.bonusDamage = Math.min(Math.floor(effectValue * 0.3), MAX_DAMAGE_CAP);
       break;
-    case 'combo':
-      if (valueType === 'percent') {
-        result.bonusDamage = Math.floor(atkVal * effectValue / 100 * 2);
-      } else {
-        result.bonusDamage = Math.floor(effectValue * 2 + atkVal * 0.3);
-      }
-      result.bonusDamage = Math.min(result.bonusDamage, MAX_DAMAGE_CAP);
+    case 'combo': {
+      // コンボ: 1ターンに2〜4回攻撃する。攻撃回数に応じて1発あたりの威力を自動減衰させ、
+      // 合計ダメージが通常攻撃(≒ATK)の1.2〜1.4倍程度に収まるように調整する。
+      let hits = parseInt(skill.hits) || (2 + Math.floor(Math.random() * 3)); // 2〜4回
+      hits = Math.min(4, Math.max(2, hits));
+      const comboFactor = 1.2 + Math.random() * 0.2; // 合計倍率 1.2〜1.4
+      let total = Math.floor(atkVal * comboFactor);
+      total = Math.min(total, MAX_DAMAGE_CAP);
+      result.comboHits = hits;               // 攻撃回数（バトル側で1発ずつ減衰して適用）
+      result.bonusDamage = total;            // 合計ダメージ
       break;
+    }
     case 'lifesteal':
       result.bonusDamage = Math.min(Math.floor((atkVal + effectValue) * 0.5), MAX_DAMAGE_CAP);
       result.heal = Math.min(Math.floor((atkVal + effectValue) * 0.3), MAX_HEAL_CAP);
@@ -626,11 +630,60 @@ function selectTarget(enemies) {
 }
 
 /* ===================================================
+   効果対象(targetSide) / 効果対象範囲(targetScope) の解決
+   - targetSide : enemy(敵) / ally(味方) / self(自分)
+   - targetScope: single(単体) / all(全体) / front(前衛) / back(後衛) / random_N(ランダムN体)
+   =================================================== */
+function deriveSkillSide(skill) {
+  if (skill && skill.targetSide) return skill.targetSide;
+  const t = (skill && (skill.effectType || '')).toLowerCase();
+  if (t === 'heal') return 'ally';
+  if (t === 'buff_atk' || t === 'buff_def') return 'self';
+  // damage / combo / debuff_def / damage_up / stun / lifesteal 等は敵対象
+  return 'enemy';
+}
+
+function resolveSkillTargets(attacker, alliesTeam, enemiesTeam, skill) {
+  const side = deriveSkillSide(skill);
+  const scope = (skill && skill.targetScope) || 'single';
+
+  if (side === 'self') return [attacker];
+
+  let pool = (side === 'ally' ? (alliesTeam || []) : (enemiesTeam || [])).filter(f => f.currentHp > 0);
+  if (pool.length === 0) return [];
+
+  if (scope === 'all') return pool;
+  if (scope === 'front') {
+    const fr = pool.filter(f => f.formation === 'front');
+    return fr.length ? fr : pool;
+  }
+  if (scope === 'back') {
+    const bk = pool.filter(f => f.formation === 'back');
+    return bk.length ? bk : pool;
+  }
+  if (typeof scope === 'string' && scope.startsWith('random_')) {
+    const n = Math.max(1, parseInt(scope.split('_')[1]) || 1);
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, n);
+  }
+  // single: 既存のターゲット重み付けロジックを利用
+  const t = selectTarget(pool);
+  return t ? [t] : [];
+}
+
+/* ===================================================
    ヒーラー自動全体回復
    =================================================== */
 function healerAutoHeal(fighter, allies, turn, logs) {
   if (!fighter.isHealer || fighter.currentHp <= 0) return;
-  if (turn % 4 !== 0) return;
+
+  // 役職パッシブ「4ターンに1度」の一般回復専用カウンター。
+  // スキル（特殊能力）のターンカウント処理とは完全に独立した変数で管理する。
+  // これにより毎ターン自動回復してしまうバグを防止する。
+  if (typeof fighter.passiveHealCounter !== 'number') fighter.passiveHealCounter = 0;
+  fighter.passiveHealCounter++;
+  if (fighter.passiveHealCounter < 4) return;
+  fighter.passiveHealCounter = 0;
 
   const wounded = allies.filter(a => a.currentHp > 0 && a.currentHp < (a.stats.maxHp || a.stats.hp));
   if (wounded.length === 0) return;
@@ -754,19 +807,40 @@ function runBattleSimulation() {
 
       attacker.skillActivatedThisTurn = false;
 
-      // ヒーラー: 回復行動のみ
+      // ヒーラー: 通常攻撃不可。毎ターンの自動全体回復は廃止し、
+      // 「4ターンに1度」のパッシブ(healerAutoHeal)と特殊能力(スキル)のみで回復する。
       if (attacker.isHealer) {
         const allies = attacker.team === '1P' ? p1Fighters : p2Fighters;
-        const wounded = allies.filter(a => a.currentHp > 0 && a.currentHp < (a.stats.maxHp || a.stats.hp));
-        if (wounded.length > 0) {
-          wounded.forEach(target => {
-            const healAmount = Math.floor((attacker.stats.atk || 0) * (attacker.healMultiplier || 1.4));
-            target.currentHp = Math.min(target.stats.maxHp || target.stats.hp, target.currentHp + healAmount);
-            logs.push(`💚 [${attacker.team}] ${attacker.name} の回復魔法！ ${target.name} のHPを ${healAmount} 回復！ (残HP: ${target.currentHp})`);
-          });
-          if (typeof playSE === 'function') playSE('heal');
-        } else {
-          logs.push(`💚 [${attacker.team}] ${attacker.name} は回復の準備をしている...`);
+        let acted = false;
+
+        if (attacker.customSkill && ROLES[attacker.role]?.canUseSkill) {
+          const hres = executeCustomSkill(attacker, null, attacker.customSkill, turn, 'on_attack_start');
+          if (hres.activated) {
+            acted = true;
+            attacker.skillActivatedThisTurn = true;
+            if (typeof playSE === 'function') playSE('skill');
+            logs.push(`✨ [${attacker.team}] ${attacker.name} の「${hres.skillName}」が発動！`);
+            if (hres.heal > 0) {
+              const healTargets = resolveSkillTargets(attacker, allies, [], attacker.customSkill);
+              (healTargets.length ? healTargets : [attacker]).forEach(t => {
+                t.currentHp = Math.min(t.stats.maxHp || t.stats.hp, t.currentHp + hres.heal);
+                logs.push(`💚 ${t.name} のHPを ${hres.heal} 回復！ (残HP: ${t.currentHp})`);
+              });
+              if (typeof playSE === 'function') playSE('heal');
+            }
+            if (hres.buffAtk > 0) {
+              attacker.stats.atk = (attacker.stats.atk || 0) + hres.buffAtk;
+              logs.push(`⚡ 攻撃力 +${hres.buffAtk}！`);
+            }
+            if (hres.buffDef > 0) {
+              attacker.stats.def = (attacker.stats.def || 0) + hres.buffDef;
+              logs.push(`🛡️ 防御力 +${hres.buffDef}！`);
+            }
+          }
+        }
+
+        if (!acted) {
+          logs.push(`💚 [${attacker.team}] ${attacker.name} はパッシブ（4ターンに1度）の回復に備えている...`);
         }
         continue;
       }
@@ -805,14 +879,30 @@ function runBattleSimulation() {
           }
 
           // スキル発動ターンは必殺技・通常攻撃をキャンセル
-          // スキル自体にダメージがある場合は適用
+          // スキル自体にダメージがある場合は適用（効果対象範囲・コンボ回数を考慮）
           if (skillResult.bonusDamage > 0) {
-            const target = selectTarget(enemyTeam);
-            if (target) {
-              target.currentHp = Math.max(0, target.currentHp - skillResult.bonusDamage);
-              logs.push(`💥 ${target.name} に ${skillResult.bonusDamage} ダメージ！ (残HP: ${target.currentHp})`);
-              if (target.currentHp <= 0) logs.push(`💥 ${target.name} は力尽き倒れた！`);
-            }
+            const allyTeam = attacker.team === '1P' ? p1Fighters : p2Fighters;
+            const resolved = resolveSkillTargets(attacker, allyTeam, enemyTeam, attacker.customSkill);
+            const hitList = resolved.length ? resolved : (selectTarget(enemyTeam) ? [selectTarget(enemyTeam)] : []);
+            const comboHits = (skillResult.comboHits && skillResult.comboHits > 1) ? skillResult.comboHits : 1;
+
+            hitList.forEach(target => {
+              if (comboHits > 1) {
+                const perHit = Math.floor(skillResult.bonusDamage / comboHits);
+                let dealt = 0;
+                for (let h = 0; h < comboHits; h++) {
+                  const dmg = (h === comboHits - 1) ? (skillResult.bonusDamage - dealt) : perHit;
+                  dealt += dmg;
+                  target.currentHp = Math.max(0, target.currentHp - dmg);
+                  logs.push(`💥 ${skillResult.skillName} ${h + 1}/${comboHits}段目！ ${target.name} に ${dmg} ダメージ！ (残HP: ${target.currentHp})`);
+                  if (target.currentHp <= 0) { logs.push(`💥 ${target.name} は力尽き倒れた！`); break; }
+                }
+              } else {
+                target.currentHp = Math.max(0, target.currentHp - skillResult.bonusDamage);
+                logs.push(`💥 ${target.name} に ${skillResult.bonusDamage} ダメージ！ (残HP: ${target.currentHp})`);
+                if (target.currentHp <= 0) logs.push(`💥 ${target.name} は力尽き倒れた！`);
+              }
+            });
           }
           if (skillResult.stun) {
             const target = selectTarget(enemyTeam);
