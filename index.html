@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Arena - Multi User Workspace</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- 初回名前入力モーダル -->
+  <div id="start-modal" class="modal-overlay">
+    <div class="modal-content text-center">
+      <h2>⚔️ AI Arena へようこそ</h2>
+      <p>プレイヤー名を入力して開始してください</p>
+      <input type="text" id="start-player-name" class="input-lg" placeholder="例: 勇者タロウ" maxlength="15">
+      <button id="start-game-btn" class="btn-primary btn-lg" style="margin-top: 15px; width: 100%;">ゲームを開始する</button>
+    </div>
+  </div>
+
+  <!-- ヘッダー -->
+  <header class="app-header">
+    <div class="header-left">
+      <h1>⚔️ AI Battle Arena Multi</h1>
+      <span id="header-user-display" class="user-badge">👤 未設定</span>
+    </div>
+  </header>
+
+  <!-- メインコンテンツ -->
+  <main class="app-container">
+
+    <!-- タブナビゲーション -->
+    <nav class="tab-nav">
+      <button class="nav-btn active" onclick="switchTab('room', event)">🌐 マルチ部屋</button>
+      <button class="nav-btn" onclick="switchTab('create', event)">➕ キャラ作成</button>
+      <button class="nav-btn" onclick="switchTab('gallery', event)">📚 共有キャラ一覧</button>
+      <button class="nav-btn" onclick="switchTab('battle', event)">⚔️ バトル＆AI小説</button>
+      <button class="nav-btn" onclick="switchTab('settings', event)">⚙️ 設定</button>
+    </nav>
+
+    <!-- 1. マルチ部屋タブ -->
+    <section id="tab-room" class="tab-content active">
+      <div class="grid-1col">
+        <div class="panel">
+          <h2>🌐 ルーム管理</h2>
+          <div class="form-group">
+            <label>部屋ID (英数字)</label>
+            <input type="text" id="room-id-input" class="input-lg" placeholder="例: my-room-123">
+          </div>
+          <div class="form-group">
+            <label>合言葉（パスワード）</label>
+            <input type="password" id="room-pass-input" class="input-lg" placeholder="パスワード">
+          </div>
+          <div class="btn-group">
+            <button class="btn-primary btn-lg" onclick="createOrJoinRoom(true); playSE('click')">👑 部屋を作る (ホスト)</button>
+            <button class="btn-action btn-lg" onclick="createOrJoinRoom(false); playSE('click')">🚪 部屋に入る (参加)</button>
+          </div>
+          <div style="margin-top: 15px;">
+            <button id="leave-room-btn" class="btn-delete btn-lg" style="display:none;" onclick="leaveRoom(); playSE('click')">🚪 ルームから退室</button>
+          </div>
+
+          <!-- ホスト専用コントロール -->
+          <div id="host-controls" style="display:none; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-color);">
+            <h3 style="font-size:1rem; margin-bottom:10px; color:var(--accent-color);">👑 ホスト専用機能</h3>
+            <p class="sub-text" style="margin-bottom:10px;">メンバーリストからBANできます。部屋削除は二重確認付きで安全です。</p>
+            <button class="btn-delete btn-lg" style="width:100%;" onclick="deleteRoom(); playSE('click')">🗑️ この部屋を完全に削除</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>💬 ルーム情報 & チャット</h2>
+          <div id="room-status-badge" class="status-badge">未接続（ソロモード中）</div>
+
+          <h3 style="margin-top: 15px;">👥 参加メンバー</h3>
+          <ul id="online-members-list" class="member-list">
+            <li>(未接続)</li>
+          </ul>
+
+          <h3 style="margin-top: 15px;">💬 チャット</h3>
+          <div id="chat-box" class="chat-box"></div>
+          <div class="chat-input-group">
+            <input type="text" id="chat-message-input" class="input-lg" placeholder="メッセージを入力...">
+            <button class="btn-primary btn-lg" onclick="sendChatMessage(); playSE('click')">送信</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. キャラ作成タブ -->
+    <section id="tab-create" class="tab-content">
+      <div class="panel">
+        <h2>➕ 新規キャラクター作成</h2>
+        <p class="sub-text">ステータス合計200pt + 特殊能力コスト(80pt以上)でキャラを作成します。</p>
+
+        <form id="create-form" onsubmit="handleCreateCharacter(event)">
+          <div class="grid-2col">
+            <div class="form-group">
+              <label>名前</label>
+              <input type="text" id="char-name" class="input-lg" required placeholder="例: 焰の騎士">
+            </div>
+            <div class="form-group">
+              <label>職業 / 肩書</label>
+              <input type="text" id="char-job" class="input-lg" placeholder="例: 魔導剣士">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>🎯 役職（ジョブ・パッシブ）</label>
+            <input type="hidden" id="char-role" value="melee">
+            <div id="role-card-grid" class="role-card-grid"></div>
+          </div>
+
+          <div class="form-group">
+            <label>タグ (カンマ区切りで複数タグ付け可)</label>
+            <input type="text" id="char-tags" class="input-lg" placeholder="例: 炎, 剣士, 主人公">
+            <div id="tag-chips-create" class="tag-chips-container" style="margin-top:8px;"></div>
+          </div>
+
+          <div class="form-group">
+            <label>見た目・外見特徴</label>
+            <input type="text" id="char-appearance" class="input-lg" placeholder="例: 赤髪の短髪、黒い鎧、片眼に傷">
+          </div>
+
+          <div class="form-group">
+            <label>キャラクター背景・性格設定</label>
+            <textarea id="char-bio" class="input-lg" rows="3" placeholder="キャラの性格や背景、戦う理由など..."></textarea>
+          </div>
+
+          <div class="grid-3col">
+            <div class="form-group">
+              <label>通常技 <span id="normal-skill-label"></span></label>
+              <input type="text" id="char-normal-skill" class="input-lg" placeholder="例: 袈裟斬り">
+            </div>
+            <div class="form-group">
+              <label>必殺技 <span id="special-skill-label"></span></label>
+              <input type="text" id="char-special-skill" class="input-lg" placeholder="例: 爆炎斬">
+            </div>
+            <div class="form-group">
+              <label>決めゼリフ</label>
+              <input type="text" id="char-quote" class="input-lg" placeholder="例: 燃え尽きろ！">
+            </div>
+          </div>
+
+          <!-- カスタム特殊能力（AI評価） -->
+          <div class="skill-input-section">
+            <label>🧬 カスタム特殊能力（AI評価・自由入力）</label>
+            <p class="sub-text" style="margin-top:5px;">能力のアイデアを文章で入力し「AI評価」ボタンを押すと、Geminiが役職に適した3つの候補を生成します。消費ポイントは80pt以上になります。</p>
+            <div class="chat-input-group" style="margin-top:10px;">
+              <input type="text" id="char-skill-input" class="input-lg" placeholder="例: 炎を纏った剣で全体攻撃＆火傷付与">
+              <button type="button" class="btn-action btn-lg" onclick="generateSkillCandidates()">AI評価</button>
+            </div>
+            <div id="skill-candidates-box" class="skill-candidates-container"></div>
+            <div id="skill-status-display" class="skill-status-box">まだスキルが選択されていません</div>
+            <div id="skill-name-edit-section" style="display:none; margin-top:10px;">
+              <label style="font-size:0.85rem;">スキル名を変更（自由命名）:</label>
+              <input type="text" id="char-skill-name-custom" class="input-lg" style="margin-top:5px;" placeholder="スキルの表示名" oninput="updateCustomSkillName('')">
+            </div>
+          </div>
+
+          <!-- ステータス割り振り -->
+          <div class="stat-allocation-container">
+            <div class="stat-header">
+              <span>📊 ステータス配分（合計最大 200pt）</span>
+              <div class="remaining-badge">
+                残り: <span id="remaining-points">200</span> pt
+              </div>
+            </div>
+
+            <div class="stat-row">
+              <div class="stat-label">
+                <span>❤️ 体力 (HP / 1pt=5HP)</span>
+                <span class="stat-value-display" id="val-hp">0 HP (0 pt)</span>
+              </div>
+              <div class="stat-inputs">
+                <input type="range" id="stat-hp" min="0" max="200" value="0" class="stat-slider">
+                <input type="number" id="num-stat-hp" min="0" max="200" value="0" class="stat-num-input input-lg">
+              </div>
+            </div>
+
+            <div class="stat-row">
+              <div class="stat-label">
+                <span>⚔️ 攻撃力 (ATK)</span>
+                <span class="stat-value-display" id="val-atk">0 pt</span>
+              </div>
+              <div class="stat-inputs">
+                <input type="range" id="stat-atk" min="0" max="200" value="0" class="stat-slider">
+                <input type="number" id="num-stat-atk" min="0" max="200" value="0" class="stat-num-input input-lg">
+              </div>
+            </div>
+
+            <div class="stat-row">
+              <div class="stat-label">
+                <span>🛡️ 防御力 (DEF)</span>
+                <span class="stat-value-display" id="val-def">0 pt</span>
+              </div>
+              <div class="stat-inputs">
+                <input type="range" id="stat-def" min="0" max="200" value="0" class="stat-slider">
+                <input type="number" id="num-stat-def" min="0" max="200" value="0" class="stat-num-input input-lg">
+              </div>
+            </div>
+
+            <div class="stat-row">
+              <div class="stat-label">
+                <span>💨 素早さ (SPD / 最大150pt)</span>
+                <span class="stat-value-display" id="val-eva">SPD:0pt / 回避:0%</span>
+              </div>
+              <div class="stat-inputs">
+                <input type="range" id="stat-eva" min="0" max="150" value="0" class="stat-slider">
+                <input type="number" id="num-stat-eva" min="0" max="150" value="0" class="stat-num-input input-lg">
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn-primary btn-lg" style="margin-top: 20px; width: 100%;">キャラクターを登録する</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 3. 共有キャラ一覧タブ -->
+    <section id="tab-gallery" class="tab-content">
+      <div class="panel">
+        <h2>📚 キャラクターギャラリー</h2>
+        <div class="search-bar">
+          <input type="text" id="gallery-tag-search" class="input-lg" placeholder="名前・職業・タグで検索 (例: 炎, 剣士, 魔術師)" oninput="filterGallery()">
+          <button class="btn-action btn-lg" onclick="filterGallery(); playSE('click')">検索</button>
+          <button class="btn-action btn-lg" onclick="resetGalleryFilter(); playSE('click')">リセット</button>
+        </div>
+        <div class="gallery-toolbar">
+          <div class="sort-dropdown-wrap">
+            <label>並び替え:</label>
+            <select id="gallery-sort-select" class="formation-select" onchange="setGallerySort(this.value)">
+              <option value="created">作成順</option>
+              <option value="atk">攻撃力順</option>
+              <option value="def">防御力順</option>
+              <option value="hp">HP順</option>
+              <option value="spd">素早さ順</option>
+              <option value="fav">お気に入り優先</option>
+            </select>
+          </div>
+          <label class="fav-only-label"><input type="checkbox" id="fav-only-checkbox" onchange="renderCharacterGallery()"> ★お気に入りのみ</label>
+        </div>
+        <div id="tag-chips-gallery" class="tag-chips-container" style="margin-bottom:10px;"></div>
+        <div id="character-list" class="character-grid"></div>
+      </div>
+    </section>
+
+    <!-- 4. バトル＆AI小説タブ -->
+    <section id="tab-battle" class="tab-content">
+      <div class="grid-1col">
+        <!-- チーム編成: 10スロット式 -->
+        <div class="panel">
+          <h2>⚔️ チーム編成（10vs10）</h2>
+
+          <div class="preset-bar">
+            <span>クイック名付け:</span>
+            <button class="btn-sm" onclick="setTeamPreset('1P チーム', '2P チーム'); playSE('click')">デフォルト</button>
+            <button class="btn-sm" onclick="setTeamPreset('紅組', '白組'); playSE('click')">🔴 vs ⚪</button>
+            <button class="btn-sm" onclick="setTeamPreset('勇者一行', '魔王軍'); playSE('click')">⚔️ vs 😈</button>
+            <button class="btn-sm" onclick="setTeamPreset('光の陣営', '闇の陣営'); playSE('click')">✨ vs 🌑</button>
+            <button class="btn-sm" onclick="setTeamPreset('天界', '魔界'); playSE('click')">☀️ vs 🌋</button>
+            <button class="btn-sm" onclick="setTeamPreset('生徒会', '不良グループ'); playSE('click')">🏫 vs 🚬</button>
+          </div>
+
+          <p class="sub-text" style="margin-top:4px;">上5枠＝自動的に前衛、下5枠＝自動的に後衛として配置されます。</p>
+
+          <div class="team-box">
+            <div class="team-header-edit">
+              <input type="text" id="p1-team-name-input" class="input-lg team-name-input" value="1P チーム" oninput="updateTeamNameDisplays()">
+              <span>(<span id="p1-count">0</span>/10体)</span>
+            </div>
+            <div id="p1-slots" class="team-slots-grid"></div>
+          </div>
+
+          <div class="team-box" style="margin-top: 15px;">
+            <div class="team-header-edit">
+              <input type="text" id="p2-team-name-input" class="input-lg team-name-input" value="2P チーム" oninput="updateTeamNameDisplays()">
+              <span>(<span id="p2-count">0</span>/10体)</span>
+            </div>
+            <div id="p2-slots" class="team-slots-grid"></div>
+          </div>
+
+          <button id="start-battle-btn" class="btn-primary btn-lg" style="width: 100%; margin-top: 15px;" onclick="runBattleSimulation(); playSE('battle_start')">⚔️ 自動バトル実行</button>
+        </div>
+
+        <!-- バトルログ ＆ AI小説 -->
+        <div class="panel">
+          <h2>📜 実況ログ ＆ AI小説化</h2>
+          <pre id="battle-log" class="log-box">シミュレーションを実行するとここにログが表示されます。</pre>
+
+          <div class="story-settings-box" style="margin-top: 20px;">
+            <h3>✍️ AI小説の設定</h3>
+
+            <div class="form-group">
+              <label>生成スタイル（任意・自由入力）</label>
+              <input type="text" id="novel-style-input" class="input-lg" placeholder="例: 神話・英雄譚風、太宰治風 など">
+            </div>
+
+            <div class="context-tags">
+              <span>ワンタップ設定:</span>
+              <button class="btn-tag" onclick="setNovelStyle('神話・英雄譚風'); playSE('click')">📜 神話・英雄譚風</button>
+              <button class="btn-tag" onclick="setNovelStyle('現代ライトノベル風'); playSE('click')">📖 現代ライトノベル風</button>
+              <button class="btn-tag" onclick="setNovelStyle('熱血実況アナウンサー風'); playSE('click')">🎤 熱血実況アナウンサー風</button>
+              <button class="btn-tag" onclick="setNovelStyle('夏目漱石風'); playSE('click')">🖋️ 夏目漱石風</button>
+              <button class="btn-tag" onclick="setNovelStyle('太宰治風'); playSE('click')">🍂 太宰治風</button>
+            </div>
+
+            <div class="form-group">
+              <label>場面・シチュエーション設定（任意）</label>
+              <textarea id="novel-context-input" class="input-lg" rows="2" placeholder="例: 雨の降る廃墟で因縁の二人が再会。互いに一歩も引けない状況..."></textarea>
+            </div>
+
+            <div class="context-tags">
+              <span>ワンタップ設定:</span>
+              <button class="btn-tag" onclick="appendNovelContext('雨の日の廃墟。雷鳴が轟く中での死闘。'); playSE('click')">🌧️ 雨の廃墟</button>
+              <button class="btn-tag" onclick="appendNovelContext('夕暮れの決闘場。観客の大歓声の中で。'); playSE('click')">🌅 夕暮れの闘技場</button>
+              <button class="btn-tag" onclick="appendNovelContext('長年の因縁に終止符を打つ宿命の対決。'); playSE('click')">⚡ 宿命の対決</button>
+              <button class="btn-tag" onclick="appendNovelContext('コミカルでおふざけ満載のギャグ調の展開。'); playSE('click')">🤪 ギャグ展開</button>
+            </div>
+
+            <button id="generate-story-btn" class="btn-action btn-lg" style="margin-top: 15px; width: 100%;" onclick="playSE('click')">✍️ Geminiで小説を生成</button>
+          </div>
+
+          <div id="novel-story-box" class="story-box" style="margin-top: 15px;">ここへAIが生成した小説が出力されます。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 設定タブ -->
+    <section id="tab-settings" class="tab-content">
+      <div class="panel">
+        <h2>⚙️ 設定・管理</h2>
+
+        <div class="grid-2col">
+          <div>
+            <h3 style="font-size:1rem; margin-bottom:10px;">👤 アカウント管理</h3>
+            <div id="settings-profile-list"></div>
+            <div class="btn-group" style="margin-top: 10px;">
+              <button class="btn-action btn-lg" onclick="createNewProfilePrompt()" style="flex:1;">新規作成</button>
+              <button class="btn-primary btn-lg" onclick="createQuickTestProfileUI()" style="flex:1;">テスト追加</button>
+            </div>
+          </div>
+
+          <div>
+            <h3 style="font-size:1rem; margin-bottom:10px;">🔐 Gemini API Key</h3>
+            <div class="form-group">
+              <input type="password" id="settings-gemini-api-key" class="input-lg" placeholder="AIzaSy...">
+              <button onclick="saveApiKeySettings(); playSE('click')" class="btn-action btn-lg" style="margin-top:5px; width: 100%;">保存</button>
+              <span id="settings-api-key-status" style="font-size: 13px; display: block; margin-top: 5px;">未設定</span>
+            </div>
+
+            <!-- APIキー説明アコーディオン -->
+            <div class="api-guide-accordion" style="margin-top: 15px;">
+              <button class="accordion-header" onclick="toggleAccordion('api-guide-body'); playSE('click')">📖 APIキーについての説明を見る</button>
+              <div id="api-guide-body" class="accordion-body" style="display:none;">
+                <h4 style="margin-bottom:8px; color:var(--accent-color);">Gemini APIとは？</h4>
+                <p style="font-size:0.85rem; margin-bottom:10px;">Gemini APIはGoogleが提供するAIモデルです。本ゲームでは「キャラクターの特殊能力の自動生成」と「パトルログからの小説自動執筆」に利用しています。APIキーを設定するとこれらの機能が使えるようになります。</p>
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="btn-action btn-lg" style="display:block; text-align:center; text-decoration:none; margin-bottom:15px;">🔗 Google AI StudioでAPIキーを取得（別タブで開く）</a>
+                <h4 style="margin-bottom:8px; color:var(--accent-color);">🔑 APIキー取得手順</h4>
+                <ol class="api-steps">
+                  <li><strong>Google AI Studioにアクセス</strong>: 上のボタンからGoogle AI Studioを開きます（Googleアカウントが必要です）。</li>
+                  <li><strong>APIキーを作成</strong>: 左サイドバーの「Get API Key」または「Create API Key」をクリックします。</li>
+                  <li><strong>プロジェクトを選択</strong>: 既存のGoogle Cloudプロジェクトを選ぶか、新規作成します。</li>
+                  <li><strong>キーをコピー</strong>: 生成された「AIzaSy...」で始まる文字列をコピーします。</li>
+                  <li><strong>本ゲームに貼り付け</strong>: 上の入力欄にキーを貼り付け「保存」をクリックします。</li>
+                  <li><strong>完了</strong>: これでAI機能（スキル生成・小説生成）が使えるようになります。</li>
+                </ol>
+                <p style="font-size:0.8rem; color:var(--text-sub); margin-top:10px;">※ APIキーはあなたのブラウザのローカルストレージにのみ保存され、外部に送信されることはありません。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- サウンド設定 -->
+      <div class="panel" style="margin-top: 20px;">
+        <h2>🎵 サウンド設定</h2>
+        <div class="grid-2col">
+          <div>
+            <h3 style="font-size:1rem; margin-bottom:10px;">🎵 BGM</h3>
+            <div class="sound-control-row">
+              <button id="bgm-toggle-btn" class="btn-action btn-lg" onclick="toggleBgm()" style="flex:1;">🎵 ON</button>
+            </div>
+            <div class="sound-volume-row">
+              <label>音量</label>
+              <input type="range" id="bgm-volume-slider" min="0" max="100" value="30" class="stat-slider" oninput="setBgmVolumeFromSlider(this.value)">
+            </div>
+          </div>
+          <div>
+            <h3 style="font-size:1rem; margin-bottom:10px;">🔊 効果音 (SE)</h3>
+            <div class="sound-control-row">
+              <button id="se-toggle-btn" class="btn-action btn-lg" onclick="toggleSe()" style="flex:1;">🔊 ON</button>
+            </div>
+            <div class="sound-volume-row">
+              <label>音量</label>
+              <input type="range" id="se-volume-slider" min="0" max="100" value="50" class="stat-slider" oninput="setSeVolumeFromSlider(this.value)">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ホスト専用: マイ部屋一覧 -->
+      <div class="panel" style="margin-top: 20px;">
+        <h2>🏠 マイ部屋一覧（ホスト専用）</h2>
+        <p class="sub-text">あなたが作成した部屋の一覧です。不要になった部屋はここから完全に削除できます。</p>
+        <div id="my-room-list"></div>
+      </div>
+
+      <!-- データリセット -->
+      <div class="panel" style="margin-top: 20px;">
+        <h2>🗑️ データリセット</h2>
+        <button onclick="resetAllData()" class="btn-delete btn-lg" style="width:100%;">すべてのデータを削除</button>
+      </div>
+
+      <!-- ゲームルール・計算仕様 -->
+      <div class="panel" style="margin-top: 20px;">
+        <h2>📖 ゲームルール・計算仕様</h2>
+        <p class="sub-text">このゲームの仕様・計算式をいつでも確認できます。各タブをクリックして切り替えてください。</p>
+
+        <div class="rules-tab-nav">
+          <button class="rules-tab-btn active" onclick="switchRulesTab('stats', event)">📊 ステータス</button>
+          <button class="rules-tab-btn" onclick="switchRulesTab('roles', event)">🎯 役職パッシブ</button>
+          <button class="rules-tab-btn" onclick="switchRulesTab('formation', event)">🛡️ 前衛・後衛</button>
+          <button class="rules-tab-btn" onclick="switchRulesTab('damage', event)">⚔️ ダメージ計算</button>
+          <button class="rules-tab-btn" onclick="switchRulesTab('skills', event)">🧬 特殊能力</button>
+        </div>
+
+        <div id="rules-panel-stats" class="rules-tab-panel active">
+          <h3>ステータスと特殊能力コストの振り分け</h3>
+          <p>キャラクター作成時に <strong>合計200pt</strong> を以下の4ステータスに振り分けます。特殊能力を選択した場合、その消費ポイント分が上限から差し引かれます。</p>
+          <ul class="rules-list">
+            <li><strong>❤️ 体力 (HP)</strong>: 振ったpt × 5 が実際のHP値になります。例: 20pt → HP 100</li>
+            <li><strong>⚔️ 攻撃力 (ATK)</strong>: そのまま攻撃力の基礎値になります（ヒーラーは回復力になります）。例: 30pt → ATK 30</li>
+            <li><strong>🛡️ 防御力 (DEF)</strong>: ダメージ軽減に使用されます。例: 20pt → DEF 20</li>
+            <li><strong>💨 素早さ (SPD)</strong>: 行動順と回避率に影響。回避率 = floor(SPD / 3)%（最大50%）。例: 15pt → 回避5%。ヒーラーは0固定。</li>
+            <li><strong>🧬 特殊能力コスト</strong>: 80pt以上消費。選択したスキルのコスト分、ステータス振り分け上限が減ります。</li>
+          </ul>
+          <p><strong>例:</strong> 特殊能力に80pt使った場合、残り120ptをHP・ATK・DEF・SPDに自由に振り分けできます。</p>
+        </div>
+
+        <div id="rules-panel-roles" class="rules-tab-panel">
+          <h3>全5役職のパッシブ補正・効果一覧</h3>
+          <p>キャラクター作成時に5つの役職から1つを選択します。バトル開始時に自動で補正が適用されます。</p>
+          <ul class="rules-list">
+            <li><strong>⚔️ 近接物理</strong>: HP・攻撃力が1.2倍になります。前線で戦うメインアタッカー向け。</li>
+            <li><strong>🏹 遠距離物理</strong>: 必殺技のダメージ倍率が2.5倍（通常は1.5倍）。狙われにくくなります。</li>
+            <li><strong>🔮 魔術師</strong>: 相手の防御力を50%無視（貫通）してダメージ計算します。防御力の高い相手に強いです。</li>
+            <li><strong>💚 ヒーラー</strong>: 通常攻撃不可。素早さ0固定（変更不可）。攻撃ステータスが回復力(1.4倍)になります。4ターンに1回、味方全体を自動回復します。技名・必殺技名の入力はできません（自動設定）。</li>
+            <li><strong>🛡️ タンク</strong>: HP・防御力が1.2倍になります。狙われやすさが大幅に上昇するため、味方の盾として機能します。</li>
+          </ul>
+        </div>
+
+        <div id="rules-panel-formation" class="rules-tab-panel">
+          <h3>前衛・後衛の配置効果</h3>
+          <p>チーム編成時に各キャラクターを「前衛」か「後衛」に配置できます。</p>
+          <ul class="rules-list">
+            <li><strong>前衛</strong>: 受ける物理ダメージが-10%軽減されます。防御力も+10%強化されます。敵から狙われやすくなります。</li>
+            <li><strong>後衛</strong>: 敵から狙われにくくなります（狙われやすさが半減）。安全に攻撃・支援ができます。</li>
+          </ul>
+          <p><strong>戦略例:</strong> タンクを前衛に配置して敵の攻撃を集め、ヒーラーや遠距離物理を後衛に配置して安全に行動させるのが基本戦術です。</p>
+        </div>
+
+        <div id="rules-panel-damage" class="rules-tab-panel">
+          <h3>ダメージ計算の基本ルール</h3>
+          <p>すべての計算で小数点以下は<strong>切り捨て（Math.floor）</strong>され、常に整数で処理されます。</p>
+          <ul class="rules-list">
+            <li><strong>通常攻撃</strong>: ATK > DEFの場合 → floor(DEF × 0.1 + (ATK - DEF))。ATK ≦ DEFの場合 → floor(ATK × 0.1)（最低1ダメージ）</li>
+            <li><strong>必殺技</strong>: ATKに必殺技倍率（通常1.5倍、遠距離物理は2.5倍）を乗算 → floor(ATK × 倍率) としてから通常計算</li>
+            <li><strong>防具貫通</strong>: 魔術師の場合、相手のDEFを50%無視 → floor(DEF × 0.5) を使って計算</li>
+            <li><strong>被ダメージ上昇デバフ</strong>: 最終ダメージに乗算します。例: 被ダメージ+30% → floor(ダメージ × 1.3)。防御力が0でもダメージが増加します。</li>
+            <li><strong>前衛軽減</strong>: 前衛のキャラは物理ダメージを10%軽減 → floor(ダメージ × 0.9)</li>
+          </ul>
+          <p><strong>計算例:</strong> ATK 50、相手DEF 30、必殺技(1.5倍)の場合: floor(50 × 1.5) = 75 → floor(30 × 0.1 + (75 - 30)) = floor(3 + 45) = 48 ダメージ</p>
+          <p><strong>被ダメージ上昇例:</strong> 基礎48ダメージ、被ダメージ+30%デバフ適用時: floor(48 × 1.3) = 62 ダメージ</p>
+        </div>
+
+        <div id="rules-panel-skills" class="rules-tab-panel">
+          <h3>特殊能力の発動条件・効果</h3>
+          <p>AIが生成する特殊能力には以下の発動条件と効果があります。条件を完全に満たした時のみ、確率抽選が行われます。</p>
+          <h4 style="margin-top:12px; color:var(--accent-color); font-size:0.9rem;">発動条件</h4>
+          <ul class="rules-list">
+            <li><strong>常時</strong>: 毎ターン発動チャンスあり</li>
+            <li><strong>バトル開始時</strong>: 戦闘開始時に1回のみ発動判定</li>
+            <li><strong>攻撃開始時</strong>: 攻撃行動の前に発動判定</li>
+            <li><strong>被弾時</strong>: 敵の攻撃を受けた時に発動判定</li>
+            <li><strong>撃破時</strong>: 敵を倒した時に発動判定</li>
+            <li><strong>Nターン毎</strong>: 指定ターン数の倍数ターンに発動判定</li>
+            <li><strong>HP XX%以下/以上</strong>: HPが条件を満たした時に発動判定</li>
+            <li><strong>先制/第1ターン</strong>: 最初のターンのみ発動</li>
+            <li><strong>時止め</strong>: 発動時、相手チーム全員の次ターンをスキップ</li>
+          </ul>
+          <h4 style="margin-top:12px; color:var(--accent-color); font-size:0.9rem;">効果種別</h4>
+          <ul class="rules-list">
+            <li><strong>damage</strong>: 追加ダメージを与える</li>
+            <li><strong>heal</strong>: 自分または味方のHPを回復</li>
+            <li><strong>buff_atk / buff_def</strong>: 攻撃力・防御力を上昇</li>
+            <li><strong>debuff_def</strong>: 相手の防御力を低下</li>
+            <li><strong>damage_up</strong>: 相手の被ダメージを上昇させるデバフ</li>
+            <li><strong>stun</strong>: 相手をスタン状態にする（行動不可）</li>
+            <li><strong>combo</strong>: 連続攻撃で大ダメージ</li>
+            <li><strong>lifesteal</strong>: ダメージの半分をHP吸収</li>
+          </ul>
+          <p style="margin-top:10px;"><strong>重要:</strong> 特殊能力が発動したターンは、必殺技や通常攻撃はキャンセルされ、スキルの効果のみが処理されます（計算バグ防止）。</p>
+          <p style="margin-top:8px;"><strong>役職制約:</strong> ヒーラーには攻撃系スキル（damage, combo, lifesteal, stun）が割り当てられません。AIは選択された役職の制約に従ったスキルのみを生成します。</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- キャラ選択モーダル（チーム編成用） -->
+  <div id="char-select-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content" style="max-width: 600px;">
+      <div class="modal-header-row">
+        <h2>キャラクター選択</h2>
+        <button class="btn-icon" onclick="closeCharSelectModal()">✖</button>
+      </div>
+      <div class="form-group">
+        <input type="text" id="char-select-search" class="input-lg" placeholder="🔍 名前・職業・タグで検索..." oninput="renderCharSelectList(this.value)">
+      </div>
+      <div id="char-select-list" class="char-select-list"></div>
+    </div>
+  </div>
+
+  <!-- 編集モーダル -->
+  <div id="edit-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+      <h2>✏️ キャラクター編集</h2>
+      <form id="edit-form" onsubmit="handleUpdateCharacter(event)">
+        <input type="hidden" id="edit-char-id">
+        <div class="form-group">
+          <label>名前</label>
+          <input type="text" id="edit-char-name" class="input-lg" required>
+        </div>
+        <div class="form-group">
+          <label>職業</label>
+          <input type="text" id="edit-char-job" class="input-lg">
+        </div>
+        <div class="form-group">
+          <label>🎯 役職（ジョブ・パッシブ）</label>
+          <input type="hidden" id="edit-char-role" value="melee">
+          <div id="edit-role-card-grid" class="role-card-grid"></div>
+        </div>
+        <div class="form-group">
+          <label>タグ</label>
+          <input type="text" id="edit-char-tags" class="input-lg">
+        </div>
+        <div class="form-group">
+          <label>見た目・外見</label>
+          <input type="text" id="edit-char-appearance" class="input-lg">
+        </div>
+        <div class="form-group">
+          <label>設定・性格</label>
+          <textarea id="edit-char-bio" class="input-lg" rows="2"></textarea>
+        </div>
+        <div class="grid-3col">
+          <input type="text" id="edit-char-normal-skill" class="input-lg" placeholder="通常技">
+          <input type="text" id="edit-char-special-skill" class="input-lg" placeholder="必殺技">
+          <input type="text" id="edit-char-quote" class="input-lg" placeholder="台詞">
+        </div>
+
+        <div class="skill-input-section" style="margin-top: 15px;">
+          <label>🧬 カスタム特殊能力（AI評価・自由入力）</label>
+          <p class="sub-text" style="margin-top:5px;">能力のアイデアを文章で入力し「AI評価」ボタンを押すと、Geminiが役職に適した3つの候補を生成します。</p>
+          <div class="chat-input-group" style="margin-top:10px;">
+            <input type="text" id="edit-char-skill-input" class="input-lg" placeholder="例: 時を止めて一撃を見舞う">
+            <button type="button" class="btn-action btn-lg" onclick="generateSkillCandidates('edit-')">AI評価</button>
+          </div>
+          <div id="edit-skill-candidates-box" class="skill-candidates-container"></div>
+          <div id="edit-skill-status-display" class="skill-status-box">まだスキルが選択されていません</div>
+          <div id="edit-skill-name-edit-section" style="display:none; margin-top:10px;">
+            <label style="font-size:0.85rem;">スキル名を変更（自由命名）:</label>
+            <input type="text" id="edit-char-skill-name-custom" class="input-lg" style="margin-top:5px;" placeholder="スキルの表示名" oninput="updateCustomSkillName('edit-')">
+          </div>
+        </div>
+
+        <div class="stat-allocation-container" style="margin-top: 15px;">
+          <div class="stat-header">
+            <span>📊 ステータス再配分 - 残り: <span id="edit-remaining-points">0</span>pt</span>
+          </div>
+
+          <div class="stat-row">
+            <div class="stat-label">
+              <span>❤️ 体力 (HP)</span>
+              <span class="stat-value-display" id="edit-val-hp">0 HP (0 pt)</span>
+            </div>
+            <div class="stat-inputs">
+              <input type="range" id="edit-stat-hp" min="0" max="200" value="0" class="stat-slider" oninput="syncStat('edit-stat-hp', 'edit-num-stat-hp')">
+              <input type="number" id="edit-num-stat-hp" min="0" max="200" value="0" class="stat-num-input input-lg">
+            </div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-label">
+              <span>⚔️ 攻撃力 (ATK)</span>
+              <span class="stat-value-display" id="edit-val-atk">0 pt</span>
+            </div>
+            <div class="stat-inputs">
+              <input type="range" id="edit-stat-atk" min="0" max="200" value="0" class="stat-slider" oninput="syncStat('edit-stat-atk', 'edit-num-stat-atk')">
+              <input type="number" id="edit-num-stat-atk" min="0" max="200" value="0" class="stat-num-input input-lg">
+            </div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-label">
+              <span>🛡️ 防御力 (DEF)</span>
+              <span class="stat-value-display" id="edit-val-def">0 pt</span>
+            </div>
+            <div class="stat-inputs">
+              <input type="range" id="edit-stat-def" min="0" max="200" value="0" class="stat-slider" oninput="syncStat('edit-stat-def', 'edit-num-stat-def')">
+              <input type="number" id="edit-num-stat-def" min="0" max="200" value="0" class="stat-num-input input-lg">
+            </div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-label">
+              <span>💨 素早さ (SPD)</span>
+              <span class="stat-value-display" id="edit-val-eva">SPD:0pt / 回避:0%</span>
+            </div>
+            <div class="stat-inputs">
+              <input type="range" id="edit-stat-eva" min="0" max="150" value="0" class="stat-slider" oninput="syncStat('edit-stat-eva', 'edit-num-stat-eva')">
+              <input type="number" id="edit-num-stat-eva" min="0" max="150" value="0" class="stat-num-input input-lg">
+            </div>
+          </div>
+        </div>
+
+        <div class="btn-group" style="margin-top: 15px;">
+          <button type="submit" class="btn-primary btn-lg">保存</button>
+          <button type="button" class="btn-delete btn-lg" onclick="closeEditModal()">キャンセル</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Firebase CDN -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAup_vToPkjsOyzvkrlo4lhCHuWJbpwNv4",
+      authDomain: "sorehakusa0115.firebaseapp.com",
+      projectId: "sorehakusa0115",
+      storageBucket: "sorehakusa0115.firebasestorage.app",
+      messagingSenderId: "323257390122",
+      appId: "1:323257390122:web:f2b680cdab8a7092779f53",
+      measurementId: "G-6999HFHYDY"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+  </script>
+
+  <script src="profile.js"></script>
+  <script src="sound.js"></script>
+  <script src="app.js"></script>
+  <script src="gemini.js"></script>
+  <script src="battle.js"></script>
+  <script src="firebase-room.js"></script>
+
+</body>
+</html>
