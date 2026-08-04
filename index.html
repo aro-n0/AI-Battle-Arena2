@@ -313,7 +313,7 @@
 
         <!-- バトルログ ＆ AI小説 -->
         <div class="panel">
-                    <div class="vb-panel-header">
+          <div class="vb-panel-header">
             <h2>📜 実況ログ ＆ AI小説化</h2>
             <div class="vb-mode-toggle">
               <button id="btn-text-mode"   class="btn-sm vb-mode-btn vb-mode-active" onclick="switchBattleView('text')">📜 テキスト</button>
@@ -359,8 +359,13 @@
           </div>
 
           <div id="novel-story-box" class="story-box" style="margin-top: 15px;">ここへAIが生成した小説が出力されます。</div>
-        </div>
-      </div>
+          </div><!-- /battle-text-view -->
+
+          <!-- ── ビジュアルバトルビュー ── -->
+          <div id="battle-visual-view" style="display:none;"></div>
+
+        </div><!-- /panel -->
+      </div><!-- /grid-1col -->
     </section>
 
     <!-- 設定タブ -->
@@ -722,6 +727,7 @@
   <script src="app.js"></script>
   <script src="gemini.js"></script>
   <script src="battle.js"></script>
+  <script src="visual-battle.js"></script>
   <script src="firebase-room.js"></script>
 
 </body>
