@@ -541,6 +541,291 @@ textarea.input-lg { resize: vertical; }
 .my-room-item { display: flex; justify-content: space-between; align-items: center; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
 .my-room-name { font-size: 0.9rem; font-weight: 600; color: var(--text-main); }
 
+/* ═══════════════════════════════════════════════
+   ビジュアルバトルモード
+   ═══════════════════════════════════════════════ */
+
+/* パネルヘッダー（タイトル＋切替ボタン） */
+.vb-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  border-bottom: 2px solid var(--primary-color);
+  padding-bottom: 5px;
+}
+.vb-panel-header h2 {
+  margin-bottom: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.vb-mode-toggle { display: flex; gap: 6px; }
+.vb-mode-btn {
+  padding: 5px 12px;
+  font-size: 0.82rem;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-sub);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.vb-mode-btn:hover { border-color: var(--primary-color); color: var(--text-main); }
+.vb-mode-active {
+  background: var(--primary-color) !important;
+  color: white !important;
+  border-color: var(--primary-color) !important;
+}
+
+/* アリーナ全体 */
+.vb-arena {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+/* ヘッダー行 */
+.vb-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+.vb-team-label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  max-width: 35%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vb-p1-label { color: #f87171; }
+.vb-p2-label { color: #60a5fa; }
+.vb-turn-badge {
+  font-size: 0.85rem;
+  font-weight: 700;
+  background: rgba(99,102,241,0.25);
+  border: 1px solid var(--primary-color);
+  color: #a5b4fc;
+  padding: 4px 14px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+/* メインフィールド */
+.vb-field {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+.vb-team-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.vb-vs {
+  display: flex;
+  align-items: center;
+  font-size: 1.4rem;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.vb-formation-header {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-sub);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  background: rgba(0,0,0,0.25);
+  border-radius: 4px;
+  text-align: center;
+}
+.vb-front-header { color: #f87171; }
+.vb-back-header  { color: #60a5fa; }
+
+.vb-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
+  gap: 5px;
+}
+
+/* キャラクターカード */
+.vb-card {
+  position: relative;
+  background: linear-gradient(160deg, #1e293b 0%, #0f172a 100%);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 6px 5px 5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  transition: border-color 0.2s;
+  overflow: visible;
+  min-width: 0;
+}
+.vb-card-role { font-size: 1.2rem; line-height: 1; }
+.vb-card-name {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text-main);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+.vb-elem-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  border: 1px solid;
+  border-radius: 6px;
+  padding: 1px 5px;
+  line-height: 1.3;
+}
+.vb-hp-bar-wrap {
+  width: 100%;
+  height: 5px;
+  background: rgba(0,0,0,0.5);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.vb-hp-bar {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #22c55e, #4ade80);
+  transition: width 0.35s ease, background 0.35s ease;
+}
+.vb-hp-text {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--text-main);
+  text-align: center;
+}
+
+/* カード: 死亡状態 */
+.vb-card-dead {
+  opacity: 0.35;
+  filter: grayscale(100%);
+  border-color: rgba(255,255,255,0.1) !important;
+}
+.vb-card-dead::after {
+  content: '☠️';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.3rem;
+  pointer-events: none;
+}
+
+/* イベントログ行 */
+.vb-event-row {
+  min-height: 44px;
+  background: rgba(0,0,0,0.35);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  text-align: center;
+}
+.vb-log-start  { color: #a5b4fc; font-weight: 700; }
+.vb-log-turn   { color: var(--text-sub); font-weight: 700; }
+.vb-log-dmg    { color: #fca5a5; }
+.vb-log-dmg em { color: #f87171; font-weight: 700; font-style: normal; }
+.vb-log-miss   { color: var(--text-sub); font-style: italic; }
+.vb-log-heal   { color: #6ee7b7; }
+.vb-log-heal em { color: #34d399; font-weight: 700; font-style: normal; }
+.vb-log-ko     { color: #f87171; font-weight: 700; }
+.vb-log-skill  { color: #fde68a; font-weight: 700; }
+.vb-log-win    { color: var(--accent-color); font-size: 1rem; font-weight: 700; }
+.vb-log-normal { color: var(--text-sub); }
+
+/* 操作ボタン */
+.vb-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
+.vb-auto-btn { background: var(--action-color) !important; color: white !important; }
+.vb-auto-active { background: var(--delete-color) !important; }
+.vb-step-counter { font-size: 0.8rem; color: var(--text-sub); margin-left: 4px; }
+
+/* ─── アニメーション ─────────────────── */
+
+@keyframes vb-hit {
+  0%   { transform: translateX(0); border-color: #f87171; }
+  20%  { transform: translateX(-4px); }
+  40%  { transform: translateX(4px); }
+  60%  { transform: translateX(-3px); }
+  80%  { transform: translateX(2px); }
+  100% { transform: translateX(0); border-color: var(--border-color); }
+}
+.vb-anim-hit {
+  animation: vb-hit 0.35s ease;
+  border-color: #f87171 !important;
+  box-shadow: 0 0 8px rgba(239,68,68,0.6);
+}
+
+@keyframes vb-attack {
+  0%,100% { transform: scale(1); }
+  50%      { transform: scale(1.1); }
+}
+.vb-anim-attack { animation: vb-attack 0.25s ease; }
+
+@keyframes vb-heal {
+  0%,100% { border-color: var(--border-color); box-shadow: none; }
+  50%      { border-color: #34d399; box-shadow: 0 0 10px rgba(52,211,153,0.5); }
+}
+.vb-anim-heal { animation: vb-heal 0.5s ease; }
+
+@keyframes vb-skill {
+  0%   { box-shadow: 0 0 0 0 rgba(253,230,138,0); }
+  50%  { box-shadow: 0 0 12px 4px rgba(253,230,138,0.6); }
+  100% { box-shadow: 0 0 0 0 rgba(253,230,138,0); }
+}
+.vb-anim-skill { animation: vb-skill 0.6s ease; border-color: #fbbf24 !important; }
+
+@keyframes vb-ko {
+  0%   { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.85); opacity: 0.35; }
+}
+.vb-anim-ko { animation: vb-ko 0.4s ease forwards; }
+
+/* フローティング数字 */
+@keyframes vb-float-up {
+  0%   { transform: translateY(0) translateX(-50%); opacity: 1; }
+  100% { transform: translateY(-38px) translateX(-50%); opacity: 0; }
+}
+.vb-float-num {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.82rem;
+  font-weight: 900;
+  pointer-events: none;
+  z-index: 20;
+  animation: vb-float-up 1s ease forwards;
+  white-space: nowrap;
+}
+.vb-num-dmg     { color: #fca5a5; text-shadow: 0 1px 4px #000; }
+.vb-num-crit    { color: #fbbf24; font-size: 0.95rem; text-shadow: 0 1px 4px #000; }
+.vb-num-special { color: #f43f5e; font-size: 1rem; text-shadow: 0 1px 6px rgba(244,63,94,0.8); }
+.vb-num-heal    { color: #6ee7b7; text-shadow: 0 1px 4px #000; }
+
 /* スマホ調整 */
 @media (max-width: 600px) {
   .app-header h1 { font-size: 1rem; }
