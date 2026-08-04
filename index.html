@@ -313,8 +313,17 @@
 
         <!-- バトルログ ＆ AI小説 -->
         <div class="panel">
-          <h2>📜 実況ログ ＆ AI小説化</h2>
-          <pre id="battle-log" class="log-box">シミュレーションを実行するとここにログが表示されます。</pre>
+                    <div class="vb-panel-header">
+            <h2>📜 実況ログ ＆ AI小説化</h2>
+            <div class="vb-mode-toggle">
+              <button id="btn-text-mode"   class="btn-sm vb-mode-btn vb-mode-active" onclick="switchBattleView('text')">📜 テキスト</button>
+              <button id="btn-visual-mode" class="btn-sm vb-mode-btn"               onclick="switchBattleView('visual')">🎮 ビジュアル</button>
+            </div>
+          </div>
+
+          <!-- ── テキストログビュー ── -->
+          <div id="battle-text-view">
+            <pre id="battle-log" class="log-box">シミュレーションを実行するとここにログが表示されます。</pre>
 
           <div class="story-settings-box" style="margin-top: 20px;">
             <h3>✍️ AI小説の設定</h3>
