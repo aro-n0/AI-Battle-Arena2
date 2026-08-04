@@ -698,6 +698,8 @@ function healerAutoHeal(fighter, allies, turn, logs) {
   wounded.forEach(target => {
     target.currentHp = Math.min(target.stats.maxHp || target.stats.hp, target.currentHp + healAmount);
     logs.push(`💚 [${fighter.team}] ${fighter.name} の自動全体回復！ ${target.name} のHPを ${healAmount} 回復！ (残HP: ${target.currentHp})`);
+    // ビジュアルバトル用イベント
+    if (window._vbEvents) window._vbEvents.push({ type: 'heal', turn: window._vbTurn || 0, healerId: fighter.id, healerName: fighter.name, targetId: target.id, targetName: target.name, amount: healAmount });
   });
 }
 
@@ -747,6 +749,16 @@ function runBattleSimulation() {
 
   const p1Fighters = buildFighters(appState.p1Team, 'p1');
   const p2Fighters = buildFighters(appState.p2Team, 'p2');
+
+  // ────────────────────────────────────────────────
+  // ビジュアルバトル用イベント収集
+  const vbEvents = [];
+  window._vbEvents = vbEvents;
+  window._vbTurn   = 0;
+  const vbInitP1 = p1Fighters.map(f => JSON.parse(JSON.stringify(f)));
+  const vbInitP2 = p2Fighters.map(f => JSON.parse(JSON.stringify(f)));
+  vbEvents.push({ type: 'battle_start', turn: 0, p1Name, p2Name });
+  // ────────────────────────────────────────────────
 
   logs.push(`--- 📜 選手入場 ---`);
   p1Fighters.forEach(c => logs.push(`[${p1Name}] ${c.name} (${c.job || '冒険者'}) [${getRoleLabel(c.role)}] [${c.formation === 'front' ? '前衛' : '後衛'}] / 「${c.quote || '……'}」`));
@@ -814,6 +826,8 @@ function runBattleSimulation() {
       });
     }
 
+    vbEvents.push({ type: 'turn_start', turn });
+    window._vbTurn = turn;
     logs.push(`--- Turn ${turn} ---`);
 
     // ヒーラー自動全体回復
@@ -876,6 +890,7 @@ function runBattleSimulation() {
           attacker.skillActivatedThisTurn = true;
           if (typeof playSE === 'function') playSE('skill');
           logs.push(`✨ [${attacker.team}] ${attacker.name} の「${skillResult.skillName}」が発動！`);
+          vbEvents.push({ type: 'skill', turn, casterId: attacker.id, casterName: attacker.name, skillName: skillResult.skillName });
 
           // 時止め処理: 相手チーム全員の次ターンをスキップ
           if (skillResult.isTimeStop) {
@@ -951,6 +966,7 @@ function runBattleSimulation() {
         if (Math.random() * 100 > RANGED_HIT_RATE) {
           logs.push(`💨 [${attacker.team}] ${attacker.name} の攻撃！ しかし ${target.name} には届かなかった！(MISS)`);
           if (typeof playSE === 'function') playSE('miss');
+          vbEvents.push({ type: 'miss', turn, attackerId: attacker.id, attackerName: attacker.name, targetId: target.id, targetName: target.name });
           continue;
         }
       }
@@ -961,6 +977,7 @@ function runBattleSimulation() {
       if ((Math.random() * 100) < evaPercent) {
         logs.push(`💨 [${attacker.team}] ${attacker.name} の攻撃！ しかし ${target.name} は素早く身をかわした！(MISS)`);
         if (typeof playSE === 'function') playSE('miss');
+        vbEvents.push({ type: 'miss', turn, attackerId: attacker.id, attackerName: attacker.name, targetId: target.id, targetName: target.name });
         continue;
       }
 
@@ -1035,11 +1052,15 @@ function runBattleSimulation() {
 
       target.currentHp = Math.max(0, target.currentHp - damage);
 
+      // ビジュアルバトル: ダメージイベント
+      vbEvents.push({ type: 'damage', turn, attackerId: attacker.id, attackerName: attacker.name, targetId: target.id, targetName: target.name, amount: damage, isSpecial, isCritical: isCritical && !isSpecial, skillName });
+
       const specialTag = isSpecial ? '🔥【必殺技】' : isCritical ? '⚡【クリティカル】' : '⚔️';
       logs.push(`${specialTag} [${attacker.team}] ${attacker.name} の「${skillName}」！ ${target.name} に ${damage} ダメージ！ (残HP: ${target.currentHp})`);
 
       if (target.currentHp <= 0) {
         logs.push(`💥 ${target.name} は力尽き倒れた！`);
+        vbEvents.push({ type: 'ko', turn, fighterId: target.id, fighterName: target.name, team: target.team });
         if (typeof playSE === 'function') playSE('ko');
 
         // on_kill スキル判定
@@ -1112,22 +1133,28 @@ function runBattleSimulation() {
 
   logs.push('\n===========================');
 
+  let _vbWinner = 'draw', _vbWinnerName = '引き分け';
   if (p1Survivors > 0 && p2Survivors === 0) {
     logs.push(`🏆 勝者: 【${p1Name}】！ (敵チーム全滅)`);
+    _vbWinner = '1P'; _vbWinnerName = p1Name;
   } else if (p2Survivors > 0 && p1Survivors === 0) {
     logs.push(`🏆 勝者: 【${p2Name}】！ (敵チーム全滅)`);
+    _vbWinner = '2P'; _vbWinnerName = p2Name;
   } else {
     logs.push(`⏱ ${maxTurns}ターン経過！ 死亡判定を行います。`);
     logs.push(`【${p1Name}】 死亡者数: ${p1DeadCount}名`);
     logs.push(`【${p2Name}】 死亡者数: ${p2DeadCount}名`);
     if (p1DeadCount < p2DeadCount) {
       logs.push(`🏆 死亡者数が少ない【${p1Name}】の判定勝ち！`);
+      _vbWinner = '1P'; _vbWinnerName = p1Name;
     } else if (p2DeadCount < p1DeadCount) {
       logs.push(`🏆 死亡者数が少ない【${p2Name}】の判定勝ち！`);
+      _vbWinner = '2P'; _vbWinnerName = p2Name;
     } else {
       logs.push(`🤝 死亡者数が同数のため、引き分け！`);
     }
   }
+  vbEvents.push({ type: 'battle_end', turn, winner: _vbWinner, winnerName: _vbWinnerName });
 
   if (typeof playSE === 'function') playSE('battle_end');
   if (typeof SoundManager !== 'undefined' && SoundManager.stopBattleBGM) {
@@ -1137,6 +1164,20 @@ function runBattleSimulation() {
   if (logBox) {
     logBox.textContent = logs.join('\n');
     logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  // ビジュアルバトルデータを保存して初期化
+  window._vbEvents = null;
+  window._vbTurn   = 0;
+  window.lastBattleVbData = {
+    p1Fighters: vbInitP1,
+    p2Fighters: vbInitP2,
+    events:     vbEvents,
+    p1Name,
+    p2Name
+  };
+  if (typeof window.initVisualBattle === 'function') {
+    window.initVisualBattle(window.lastBattleVbData);
   }
 }
 
