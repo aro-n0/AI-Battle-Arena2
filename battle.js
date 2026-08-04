@@ -13,6 +13,10 @@ if (!appState.localCharacters) appState.localCharacters = [];
 
 const MAX_TOTAL_POINTS = 200;
 const MAX_EVA_POINTS = 150;
+const SKILL_COST_MAX = 190;
+const BUFF_SKILL_COST_MIN = 110;
+const DEF_MULTIPLIER = 2.5;
+const RANGED_HIT_RATE = 70;
 
 /* ===================================================
    役職（ジョブ）パッシブ定義 — 王道5役職
@@ -128,7 +132,7 @@ function updateStatValues(prefix = '') {
 
   if (valHp) valHp.textContent = `${hp * 5} HP (${hp} pt)`;
   if (valAtk) valAtk.textContent = roleKey === 'healer' ? `${atk} pt (回復力)` : `${atk} pt`;
-  if (valDef) valDef.textContent = `${def} pt`;
+  if (valDef) valDef.textContent = `${def * DEF_MULTIPLIER} DEF (${def} pt)`;
   if (valEva) valEva.textContent = `SPD:${eva}pt / 回避:${Math.floor(eva / 3)}%`;
 }
 
@@ -190,7 +194,7 @@ async function handleCreateCharacter(e) {
       hp: hp * 5,
       maxHp: hp * 5,
       atk: atk,
-      def: def,
+      def: Math.floor(def * DEF_MULTIPLIER),
       eva: eva,
       spd: eva
     },
@@ -230,6 +234,14 @@ window.openEditModal = function(id) {
   document.getElementById('edit-char-name').value = char.name;
   document.getElementById('edit-char-job').value = char.job || '冒険者';
   document.getElementById('edit-char-tags').value = Array.isArray(char.tags) ? char.tags.join(', ') : '';
+
+  if (typeof renderElementSelectOptions === 'function') renderElementSelectOptions('edit-');
+  const editElemSelect = document.getElementById('edit-char-element');
+  if (editElemSelect) editElemSelect.value = char.element || '';
+  const editElemColor = document.getElementById('edit-char-element-color');
+  if (editElemColor) editElemColor.value = char.elementColor || '';
+  if (typeof renderElementConfigUI === 'function') renderElementConfigUI('edit-');
+
   document.getElementById('edit-char-bio').value = char.bio || '';
   document.getElementById('edit-char-appearance').value = char.appearance || '';
   document.getElementById('edit-char-normal-skill').value = char.normalSkill || '';
@@ -257,7 +269,7 @@ window.openEditModal = function(id) {
 
   const hpPt = char.stats.hp ? Math.floor(char.stats.hp / 5) : 0;
   const atkPt = char.stats.atk || 0;
-  const defPt = char.stats.def || 0;
+  const defPt = char.stats.def ? Math.floor(char.stats.def / DEF_MULTIPLIER) : 0;
   const evaPt = char.stats.eva || char.stats.spd || 0;
 
   const statMap = { hp: hpPt, atk: atkPt, def: defPt, eva: evaPt };
@@ -405,7 +417,9 @@ const SKILL_CONDITIONS = {
   TURN_AFTER: 'turn_after',
   TURN_BEFORE: 'turn_before',
   FIRST_TURN: 'first_turn',
-  ALWAYS: 'always'
+  ALWAYS: 'always',
+  ALIVE: 'alive',
+  ON_DEATH: 'on_death'
 };
 
 function parseConditionType(conditionStr) {
@@ -413,6 +427,8 @@ function parseConditionType(conditionStr) {
   const c = conditionStr.trim().toLowerCase();
 
   if (c === '常時' || c === 'なし' || c === '無条件' || c === 'always' || c === '') return SKILL_CONDITIONS.ALWAYS;
+  if (c.includes('生存中') || c.includes('生きている時') || c.includes('alive')) return SKILL_CONDITIONS.ALIVE;
+  if (c.includes('死亡時') || c.includes('倒された時') || c.includes('on_death')) return SKILL_CONDITIONS.ON_DEATH;
   if (c.includes('バトル開始') || c.includes('戦闘開始') || c.includes('on_battle_start')) return SKILL_CONDITIONS.ON_BATTLE_START;
   if (c.includes('攻撃開始') || c.includes('on_attack_start') || c.includes('攻撃時')) return SKILL_CONDITIONS.ON_ATTACK_START;
   if (c.includes('被弾') || c.includes('被打撃') || c.includes('on_damage_taken') || c.includes('被ダメージ')) return SKILL_CONDITIONS.ON_DAMAGE_TAKEN;
@@ -446,6 +462,8 @@ function checkSkillCondition(skill, attacker, target, currentTurn, triggerEvent)
   const parsed = parseConditionType(condition);
 
   if (parsed === SKILL_CONDITIONS.ALWAYS) return true;
+  if (parsed === SKILL_CONDITIONS.ALIVE) return attacker.currentHp > 0;
+  if (parsed === SKILL_CONDITIONS.ON_DEATH) return triggerEvent === 'on_death';
   if (parsed === SKILL_CONDITIONS.ON_BATTLE_START) return triggerEvent === 'on_battle_start';
   if (parsed === SKILL_CONDITIONS.ON_ATTACK_START) return triggerEvent === 'on_attack_start';
   if (parsed === SKILL_CONDITIONS.ON_DAMAGE_TAKEN) return triggerEvent === 'on_damage_taken';
@@ -536,18 +554,28 @@ function executeCustomSkill(attacker, target, skill, currentTurn, triggerEvent) 
   const atkVal = attacker.stats.atk || 0;
   const maxHpVal = attacker.stats.maxHp || attacker.stats.hp || 1;
   const defVal = attacker.stats.def || 0;
+  const spdVal = attacker.stats.spd || attacker.stats.eva || 0;
   const targetDef = (target && target.stats && target.stats.def) || 0;
 
   const MAX_DAMAGE_CAP = Math.floor(atkVal * 3.0);
   const MAX_BUFF_PCT = 50;
   const MAX_HEAL_CAP = Math.floor(maxHpVal * 0.5);
+  const MAX_BUFF_HP_CAP = Math.floor(maxHpVal * 0.5);
+  const MAX_BUFF_SPD_CAP = Math.floor(spdVal * 0.5);
+
+  // Element affinity bonus (1.5x damage if attacker's element beats target's element)
+  let elementMultiplier = 1.0;
+  if (target && attacker.element && target.element) {
+    const elemData = (typeof getElementAffinity === 'function') ? getElementAffinity(attacker.element, target.element) : null;
+    if (elemData && elemData > 0) elementMultiplier = 1.5;
+  }
 
   switch (effectType) {
     case 'damage':
       if (valueType === 'percent') {
-        result.bonusDamage = Math.floor(atkVal * effectValue / 100);
+        result.bonusDamage = Math.floor(atkVal * effectValue / 100 * elementMultiplier);
       } else {
-        result.bonusDamage = Math.floor(effectValue + atkVal * 0.5);
+        result.bonusDamage = Math.floor((effectValue + atkVal * 0.5) * elementMultiplier);
       }
       result.bonusDamage = Math.min(result.bonusDamage, MAX_DAMAGE_CAP);
       break;
@@ -558,6 +586,7 @@ function executeCustomSkill(attacker, target, skill, currentTurn, triggerEvent) 
         result.heal = Math.floor(effectValue * (attacker.healMultiplier || 1));
       }
       result.heal = Math.min(result.heal, MAX_HEAL_CAP);
+      if (_mudBattleActive) result.heal = Math.floor(result.heal * 0.5);
       break;
     case 'buff_atk':
       if (valueType === 'percent') {
@@ -580,6 +609,20 @@ function executeCustomSkill(attacker, target, skill, currentTurn, triggerEvent) 
         result.debuffDef = Math.min(effectValue, Math.floor(targetDef * MAX_BUFF_PCT / 100));
       }
       break;
+    case 'buff_hp':
+      if (valueType === 'percent') {
+        result.buffHp = Math.floor(maxHpVal * Math.min(effectValue, MAX_BUFF_PCT) / 100);
+      } else {
+        result.buffHp = Math.min(effectValue, MAX_BUFF_HP_CAP);
+      }
+      break;
+    case 'buff_spd':
+      if (valueType === 'percent') {
+        result.buffSpd = Math.floor(spdVal * Math.min(effectValue, MAX_BUFF_PCT) / 100);
+      } else {
+        result.buffSpd = Math.min(effectValue, MAX_BUFF_SPD_CAP);
+      }
+      break;
     case 'damage_up':
       result.damageUp = Math.min(1.0, effectValue / 100);
       break;
@@ -589,15 +632,16 @@ function executeCustomSkill(attacker, target, skill, currentTurn, triggerEvent) 
       break;
     case 'combo':
       if (valueType === 'percent') {
-        result.bonusDamage = Math.floor(atkVal * effectValue / 100 * 2);
+        result.bonusDamage = Math.floor(atkVal * effectValue / 100 * 2 * elementMultiplier);
       } else {
-        result.bonusDamage = Math.floor(effectValue * 2 + atkVal * 0.3);
+        result.bonusDamage = Math.floor((effectValue * 2 + atkVal * 0.3) * elementMultiplier);
       }
       result.bonusDamage = Math.min(result.bonusDamage, MAX_DAMAGE_CAP);
       break;
     case 'lifesteal':
       result.bonusDamage = Math.min(Math.floor((atkVal + effectValue) * 0.5), MAX_DAMAGE_CAP);
       result.heal = Math.min(Math.floor((atkVal + effectValue) * 0.3), MAX_HEAL_CAP);
+      if (_mudBattleActive) result.heal = Math.floor(result.heal * 0.5);
       break;
     default:
       result.bonusDamage = Math.min(Math.floor(effectValue + atkVal * 0.5), MAX_DAMAGE_CAP);
@@ -628,6 +672,20 @@ function selectTarget(enemies) {
 /* ===================================================
    ヒーラー自動全体回復
    =================================================== */
+const ELEMENT_DEFAULTS = {
+  names: ['炎', '水', '風', '土', '光', '闇'],
+  colors: ['#ef4444', '#3b82f6', '#10b981', '#a16207', '#facc15', '#7c3aed'],
+  affinities: { '炎': '風', '風': '土', '土': '水', '水': '炎', '光': '闇', '闇': '光' }
+};
+
+function getElementAffinity(attackerElement, defenderElement) {
+  if (!attackerElement || !defenderElement) return 0;
+  const elemConfig = (typeof getElementConfig === 'function') ? getElementConfig() : null;
+  const affinities = (elemConfig && elemConfig.affinities) ? elemConfig.affinities : ELEMENT_DEFAULTS.affinities;
+  if (affinities[attackerElement] === defenderElement) return 1;
+  return 0;
+}
+
 function healerAutoHeal(fighter, allies, turn, logs) {
   if (!fighter.isHealer || fighter.currentHp <= 0) return;
   if (turn % 4 !== 0) return;
@@ -646,6 +704,8 @@ function healerAutoHeal(fighter, allies, turn, logs) {
 /* ===================================================
    バトルシミュレーション本体
    =================================================== */
+let _mudBattleActive = false;
+
 function runBattleSimulation() {
   if (typeof syncTeamSlots === 'function') syncTeamSlots();
 
@@ -709,17 +769,50 @@ function runBattleSimulation() {
         f.stats.def = (f.stats.def || 0) + result.buffDef;
         logs.push(`🛡️ 防御力 +${result.buffDef}！`);
       }
+      if (result.buffHp > 0) {
+        f.stats.maxHp = (f.stats.maxHp || f.stats.hp) + result.buffHp;
+        f.currentHp = Math.min(f.stats.maxHp, f.currentHp + result.buffHp);
+        logs.push(`❤️ 最大HP +${result.buffHp}！ (HP: ${f.currentHp}/${f.stats.maxHp})`);
+      }
+      if (result.buffSpd > 0) {
+        f.stats.spd = (f.stats.spd || 0) + result.buffSpd;
+        logs.push(`💨 素早さ +${result.buffSpd}！`);
+      }
     }
   });
 
   let turn = 1;
   const maxTurns = 50;
+  _mudBattleActive = false;
+  let mudBattleBgmSwitched = false;
+
+  if (typeof SoundManager !== 'undefined' && SoundManager.startBattleBGM) {
+    SoundManager.startBattleBGM();
+  }
 
   while (turn <= maxTurns) {
     const activeP1 = p1Fighters.filter(f => f.currentHp > 0);
     const activeP2 = p2Fighters.filter(f => f.currentHp > 0);
 
     if (activeP1.length === 0 || activeP2.length === 0) break;
+
+    // 泥沼戦演出: 30ターン突破でテンポ1.2倍
+    if (turn === 30 && typeof SoundManager !== 'undefined' && SoundManager.setBattleBgmTempo) {
+      SoundManager.setBattleBgmTempo(1.2);
+      logs.push(`🎵 BGMのテンポが加速した！決着を急げ！`);
+    }
+    // 40ターン突破で絶望BGM＋ATK1.5倍＋回復半減
+    if (turn === 40) {
+      _mudBattleActive = true;
+      if (!mudBattleBgmSwitched && typeof SoundManager !== 'undefined' && SoundManager.switchToDesperationBGM) {
+        SoundManager.switchToDesperationBGM();
+        mudBattleBgmSwitched = true;
+      }
+      logs.push(`😱 40ターン突破！絶望的な決戦BGMへ切り替え！全員のATKが1.5倍に！回復量が半減！`);
+      [...p1Fighters, ...p2Fighters].forEach(f => {
+        if (f.currentHp > 0) f.stats.atk = Math.floor((f.stats.atk || 0) * 1.5);
+      });
+    }
 
     logs.push(`--- Turn ${turn} ---`);
 
@@ -760,7 +853,8 @@ function runBattleSimulation() {
         const wounded = allies.filter(a => a.currentHp > 0 && a.currentHp < (a.stats.maxHp || a.stats.hp));
         if (wounded.length > 0) {
           wounded.forEach(target => {
-            const healAmount = Math.floor((attacker.stats.atk || 0) * (attacker.healMultiplier || 1.4));
+            let healAmount = Math.floor((attacker.stats.atk || 0) * (attacker.healMultiplier || 1.4));
+            if (_mudBattleActive) healAmount = Math.floor(healAmount * 0.5);
             target.currentHp = Math.min(target.stats.maxHp || target.stats.hp, target.currentHp + healAmount);
             logs.push(`💚 [${attacker.team}] ${attacker.name} の回復魔法！ ${target.name} のHPを ${healAmount} 回復！ (残HP: ${target.currentHp})`);
           });
@@ -798,6 +892,15 @@ function runBattleSimulation() {
           if (skillResult.buffDef > 0) {
             attacker.stats.def = (attacker.stats.def || 0) + skillResult.buffDef;
             logs.push(`🛡️ 防御力 +${skillResult.buffDef} (持続${skillResult.duration}T)`);
+          }
+          if (skillResult.buffHp > 0) {
+            attacker.stats.maxHp = (attacker.stats.maxHp || attacker.stats.hp) + skillResult.buffHp;
+            attacker.currentHp = Math.min(attacker.stats.maxHp, attacker.currentHp + skillResult.buffHp);
+            logs.push(`❤️ 最大HP +${skillResult.buffHp}！ (HP: ${attacker.currentHp}/${attacker.stats.maxHp})`);
+          }
+          if (skillResult.buffSpd > 0) {
+            attacker.stats.spd = (attacker.stats.spd || 0) + skillResult.buffSpd;
+            logs.push(`💨 素早さ +${skillResult.buffSpd}！ (持続${skillResult.duration}T)`);
           }
           if (skillResult.heal > 0) {
             attacker.currentHp = Math.min(attacker.stats.maxHp || attacker.stats.hp, attacker.currentHp + skillResult.heal);
@@ -843,6 +946,15 @@ function runBattleSimulation() {
       const target = selectTarget(enemyTeam);
       if (!target) continue;
 
+      // 遠距離物理の通常攻撃命中率判定 (70%)
+      if (attacker.role === 'ranged') {
+        if (Math.random() * 100 > RANGED_HIT_RATE) {
+          logs.push(`💨 [${attacker.team}] ${attacker.name} の攻撃！ しかし ${target.name} には届かなかった！(MISS)`);
+          if (typeof playSE === 'function') playSE('miss');
+          continue;
+        }
+      }
+
       // 回避判定
       const evaVal = target.stats.eva || target.stats.spd || 0;
       const evaPercent = Math.min(50, Math.floor(evaVal / 3));
@@ -867,6 +979,15 @@ function runBattleSimulation() {
             target.stats.atk = (target.stats.atk || 0) + dtResult.buffAtk;
             logs.push(`⚡ 攻撃力 +${dtResult.buffAtk}！`);
           }
+          if (dtResult.buffHp > 0) {
+            target.stats.maxHp = (target.stats.maxHp || target.stats.hp) + dtResult.buffHp;
+            target.currentHp = Math.min(target.stats.maxHp, target.currentHp + dtResult.buffHp);
+            logs.push(`❤️ 最大HP +${dtResult.buffHp}！`);
+          }
+          if (dtResult.buffSpd > 0) {
+            target.stats.spd = (target.stats.spd || 0) + dtResult.buffSpd;
+            logs.push(`💨 素早さ +${dtResult.buffSpd}！`);
+          }
           if (dtResult.heal > 0) {
             target.currentHp = Math.min(target.stats.maxHp || target.stats.hp, target.currentHp + dtResult.heal);
             logs.push(`💚 HPを ${dtResult.heal} 回復！ (残HP: ${target.currentHp})`);
@@ -878,6 +999,15 @@ function runBattleSimulation() {
       const skillName = isSpecial ? (attacker.specialSkill || '奥義') : (attacker.normalSkill || '通常攻撃');
       let damage = calculateDamage(attacker, target, isSpecial);
 
+      // Element affinity bonus on normal/special attack
+      if (attacker.element && target.element) {
+        const elemBonus = (typeof getElementAffinity === 'function') ? getElementAffinity(attacker.element, target.element) : 0;
+        if (elemBonus > 0) {
+          damage = Math.floor(damage * 1.5);
+          logs.push(`🔥 属性相性ボーナス！ ${attacker.element} → ${target.element} (1.5倍)`);
+        }
+      }
+
       if (isSpecial) {
         logs.push(`🔥 [${attacker.team}] ${attacker.name} の決めゼリフ「${attacker.quote || '……'}」！`);
         if (typeof playSE === 'function') playSE('special');
@@ -885,9 +1015,27 @@ function runBattleSimulation() {
         if (typeof playSE === 'function') playSE('attack');
       }
 
+      // スキルの追加ダメージ効果 (damage effectType on on_attack_start)
+      if (attacker.customSkill && ROLES[attacker.role]?.canUseSkill && !attacker.skillActivatedThisTurn) {
+        const dmgSkillResult = executeCustomSkill(attacker, target, attacker.customSkill, turn, 'on_attack_start');
+        if (dmgSkillResult.activated && dmgSkillResult.bonusDamage > 0 && dmgSkillResult.effectType === 'damage') {
+          target.currentHp = Math.max(0, target.currentHp - dmgSkillResult.bonusDamage);
+          damage += dmgSkillResult.bonusDamage;
+          logs.push(`🟠 💜 追加攻撃！ ${target.name} に ${dmgSkillResult.bonusDamage} 追加ダメージ！ (残HP: ${target.currentHp})`);
+          if (typeof playSE === 'function') playSE('bonus_damage');
+        }
+      }
+
+      // Critical hit (10% chance for normal, always for special)
+      const isCritical = isSpecial || (Math.random() < 0.10);
+      if (isCritical && !isSpecial) {
+        damage = Math.floor(damage * 1.5);
+        if (typeof playSE === 'function') playSE('critical');
+      }
+
       target.currentHp = Math.max(0, target.currentHp - damage);
 
-      const specialTag = isSpecial ? '🔥【必殺技】' : '⚔️';
+      const specialTag = isSpecial ? '🔥【必殺技】' : isCritical ? '⚡【クリティカル】' : '⚔️';
       logs.push(`${specialTag} [${attacker.team}] ${attacker.name} の「${skillName}」！ ${target.name} に ${damage} ダメージ！ (残HP: ${target.currentHp})`);
 
       if (target.currentHp <= 0) {
@@ -903,9 +1051,50 @@ function runBattleSimulation() {
               attacker.stats.atk = (attacker.stats.atk || 0) + killResult.buffAtk;
               logs.push(`⚡ 攻撃力 +${killResult.buffAtk}！`);
             }
+            if (killResult.buffHp > 0) {
+              attacker.stats.maxHp = (attacker.stats.maxHp || attacker.stats.hp) + killResult.buffHp;
+              attacker.currentHp = Math.min(attacker.stats.maxHp, attacker.currentHp + killResult.buffHp);
+              logs.push(`❤️ 最大HP +${killResult.buffHp}！`);
+            }
+            if (killResult.buffSpd > 0) {
+              attacker.stats.spd = (attacker.stats.spd || 0) + killResult.buffSpd;
+              logs.push(`💨 素早さ +${killResult.buffSpd}！`);
+            }
             if (killResult.heal > 0) {
               attacker.currentHp = Math.min(attacker.stats.maxHp || attacker.stats.hp, attacker.currentHp + killResult.heal);
               logs.push(`💚 HPを ${killResult.heal} 回復！ (残HP: ${attacker.currentHp})`);
+            }
+          }
+        }
+
+        // on_death スキル判定（死亡したキャラが発動）
+        if (target.customSkill && ROLES[target.role]?.canUseSkill && !target.skillActivatedThisTurn) {
+          const deathResult = executeCustomSkill(target, attacker, target.customSkill, turn, 'on_death');
+          if (deathResult.activated) {
+            target.skillActivatedThisTurn = true;
+            if (typeof playSE === 'function') playSE('skill');
+            logs.push(`💀 [${target.team}] ${target.name} の「${deathResult.skillName}」が死亡時に発動！最期の力が解放される！`);
+            if (deathResult.bonusDamage > 0) {
+              const enemyOfDying = target.team === '1P' ? p2Fighters.filter(f => f.currentHp > 0) : p1Fighters.filter(f => f.currentHp > 0);
+              if (enemyOfDying.length > 0) {
+                const deathTarget = enemyOfDying[Math.floor(Math.random() * enemyOfDying.length)];
+                deathTarget.currentHp = Math.max(0, deathTarget.currentHp - deathResult.bonusDamage);
+                logs.push(`💥 ${deathTarget.name} に ${deathResult.bonusDamage} 反撃ダメージ！ (残HP: ${deathTarget.currentHp})`);
+              }
+            }
+            if (deathResult.heal > 0) {
+              const alliesOfDying = target.team === '1P' ? p1Fighters : p2Fighters;
+              alliesOfDying.forEach(a => {
+                if (a.currentHp > 0) {
+                  a.currentHp = Math.min(a.stats.maxHp || a.stats.hp, a.currentHp + deathResult.heal);
+                }
+              });
+              logs.push(`💚 味方全体のHPを ${deathResult.heal} 回復！ ${target.name}の遺言効果！`);
+            }
+            if (deathResult.buffAtk > 0) {
+              const alliesOfDying = target.team === '1P' ? p1Fighters : p2Fighters;
+              alliesOfDying.forEach(a => { if (a.currentHp > 0) a.stats.atk = (a.stats.atk || 0) + deathResult.buffAtk; });
+              logs.push(`⚡ 味方全体の攻撃力 +${deathResult.buffAtk}！`);
             }
           }
         }
@@ -941,6 +1130,9 @@ function runBattleSimulation() {
   }
 
   if (typeof playSE === 'function') playSE('battle_end');
+  if (typeof SoundManager !== 'undefined' && SoundManager.stopBattleBGM) {
+    SoundManager.stopBattleBGM();
+  }
 
   if (logBox) {
     logBox.textContent = logs.join('\n');
@@ -998,6 +1190,11 @@ window.saveEditCharacter = function(e) {
   const tagsInput = document.getElementById('edit-char-tags').value;
   char.tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
 
+  const editElemSelect = document.getElementById('edit-char-element');
+  if (editElemSelect) char.element = editElemSelect.value;
+  const editElemColor = document.getElementById('edit-char-element-color');
+  if (editElemColor) char.elementColor = editElemColor.value;
+
   char.bio = document.getElementById('edit-char-bio').value.trim();
   char.quote = document.getElementById('edit-char-quote').value.trim();
 
@@ -1019,7 +1216,7 @@ window.saveEditCharacter = function(e) {
     hp: hpPt * 5,
     maxHp: hpPt * 5,
     atk: atkPt,
-    def: defPt,
+    def: Math.floor(defPt * DEF_MULTIPLIER),
     spd: spdPt,
     eva: spdPt,
     evaRate: Math.min(30, Math.floor(spdPt * 0.2))

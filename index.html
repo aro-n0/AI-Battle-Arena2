@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Arena - Multi User Workspace</title>
   <link rel="stylesheet" href="style.css">
+  <meta property="og:image" content="https://bolt.new/static/og_default.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://bolt.new/static/og_default.png">
 </head>
 <body>
 
@@ -49,7 +52,10 @@
           </div>
           <div class="form-group">
             <label>合言葉（パスワード）</label>
-            <input type="password" id="room-pass-input" class="input-lg" placeholder="パスワード">
+            <div class="password-input-wrap">
+              <input type="password" id="room-pass-input" class="input-lg" placeholder="パスワード">
+              <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('room-pass-input', this)" title="パスワードを表示/非表示">👁️</button>
+            </div>
           </div>
           <div class="btn-group">
             <button class="btn-primary btn-lg" onclick="createOrJoinRoom(true); playSE('click')">👑 部屋を作る (ホスト)</button>
@@ -114,6 +120,29 @@
             <label>タグ (カンマ区切りで複数タグ付け可)</label>
             <input type="text" id="char-tags" class="input-lg" placeholder="例: 炎, 剣士, 主人公">
             <div id="tag-chips-create" class="tag-chips-container" style="margin-top:8px;"></div>
+          </div>
+
+          <div class="form-group">
+            <label>🔮 属性カスタマイズ</label>
+            <p class="sub-text" style="margin-top:4px; font-size:0.8rem;">キャラクターの属性を選択します。属性相性により有利な属性への攻撃が1.5倍になります。</p>
+            <select id="char-element" class="input-lg" onchange="onElementSelectChange('')">
+              <option value="">属性なし</option>
+            </select>
+            <input type="hidden" id="char-element-color" value="">
+          </div>
+
+          <div class="form-group">
+            <label>🎨 属性システム設定（6属性の名前・カラー・相性）</label>
+            <div class="element-preset-bar">
+              <span>クイック属性設定:</span>
+              <button type="button" class="btn-sm" onclick="setElementPreset('basic')">基本(炎水風土光闇)</button>
+              <button type="button" class="btn-sm" onclick="setElementPreset('seasonal')">季節(春夏秋冬朝夜)</button>
+              <button type="button" class="btn-sm" onclick="setElementPreset('metal')">金属(金银铜鉄白金ルビー)</button>
+              <button type="button" class="btn-sm" onclick="setElementPreset('magic')">魔法(水火雷氷聖魔)</button>
+            </div>
+            <div id="element-config-container" class="element-config-grid"></div>
+            <h4 style="font-size:0.85rem; margin-top:12px; color:var(--accent-color);">⚔️ 属性相性（どの属性がどの属性に強いか）</h4>
+            <div id="element-affinity-container" class="element-affinity-list"></div>
           </div>
 
           <div class="form-group">
@@ -190,8 +219,8 @@
 
             <div class="stat-row">
               <div class="stat-label">
-                <span>🛡️ 防御力 (DEF)</span>
-                <span class="stat-value-display" id="val-def">0 pt</span>
+                <span>🛡️ 防御力 (DEF / 1pt=2.5DEF)</span>
+                <span class="stat-value-display" id="val-def">0 DEF (0 pt)</span>
               </div>
               <div class="stat-inputs">
                 <input type="range" id="stat-def" min="0" max="200" value="0" class="stat-slider">
@@ -430,7 +459,7 @@
           <ul class="rules-list">
             <li><strong>❤️ 体力 (HP)</strong>: 振ったpt × 5 が実際のHP値になります。例: 20pt → HP 100</li>
             <li><strong>⚔️ 攻撃力 (ATK)</strong>: そのまま攻撃力の基礎値になります（ヒーラーは回復力になります）。例: 30pt → ATK 30</li>
-            <li><strong>🛡️ 防御力 (DEF)</strong>: ダメージ軽減に使用されます。例: 20pt → DEF 20</li>
+            <li><strong>🛡️ 防御力 (DEF)</strong>: 振ったpt × 2.5 が実際のDEF値になります。例: 20pt → DEF 50</li>
             <li><strong>💨 素早さ (SPD)</strong>: 行動順と回避率に影響。回避率 = floor(SPD / 3)%（最大50%）。例: 15pt → 回避5%。ヒーラーは0固定。</li>
             <li><strong>🧬 特殊能力コスト</strong>: 80pt以上消費。選択したスキルのコスト分、ステータス振り分け上限が減ります。</li>
           </ul>
@@ -442,7 +471,7 @@
           <p>キャラクター作成時に5つの役職から1つを選択します。バトル開始時に自動で補正が適用されます。</p>
           <ul class="rules-list">
             <li><strong>⚔️ 近接物理</strong>: HP・攻撃力が1.2倍になります。前線で戦うメインアタッカー向け。</li>
-            <li><strong>🏹 遠距離物理</strong>: 必殺技のダメージ倍率が2.5倍（通常は1.5倍）。狙われにくくなります。</li>
+            <li><strong>🏹 遠距離物理</strong>: 必殺技のダメージ倍率が2.5倍（通常は1.5倍）。狙われにくくなります。通常攻撃の命中率は70%です（特殊能力の命中率は別設定）。</li>
             <li><strong>🔮 魔術師</strong>: 相手の防御力を50%無視（貫通）してダメージ計算します。防御力の高い相手に強いです。</li>
             <li><strong>💚 ヒーラー</strong>: 通常攻撃不可。素早さ0固定（変更不可）。攻撃ステータスが回復力(1.4倍)になります。4ターンに1回、味方全体を自動回復します。技名・必殺技名の入力はできません（自動設定）。</li>
             <li><strong>🛡️ タンク</strong>: HP・防御力が1.2倍になります。狙われやすさが大幅に上昇するため、味方の盾として機能します。</li>
@@ -463,8 +492,10 @@
           <h3>ダメージ計算の基本ルール</h3>
           <p>すべての計算で小数点以下は<strong>切り捨て（Math.floor）</strong>され、常に整数で処理されます。</p>
           <ul class="rules-list">
-            <li><strong>通常攻撃</strong>: ATK > DEFの場合 → floor(DEF × 0.1 + (ATK - DEF))。ATK ≦ DEFの場合 → floor(ATK × 0.1)（最低1ダメージ）</li>
+            <li><strong>通常攻撃</strong>: ATK > DEFの場合 → floor(DEF × 0.1 + (ATK - DEF))。ATK ≦ DEFの場合 → floor(ATK × 0.1)（最低1ダメージ）。遠距離物理の通常攻撃は命中率70%で失敗時はMISS</li>
             <li><strong>必殺技</strong>: ATKに必殺技倍率（通常1.5倍、遠距離物理は2.5倍）を乗算 → floor(ATK × 倍率) としてから通常計算</li>
+            <li><strong>クリティカル</strong>: 通常攻撃の10%確率で発生。ダメージが1.5倍</li>
+            <li><strong>属性相性ボーナス</strong>: 有利な属性への攻撃はダメージが1.5倍</li>
             <li><strong>防具貫通</strong>: 魔術師の場合、相手のDEFを50%無視 → floor(DEF × 0.5) を使って計算</li>
             <li><strong>被ダメージ上昇デバフ</strong>: 最終ダメージに乗算します。例: 被ダメージ+30% → floor(ダメージ × 1.3)。防御力が0でもダメージが増加します。</li>
             <li><strong>前衛軽減</strong>: 前衛のキャラは物理ダメージを10%軽減 → floor(ダメージ × 0.9)</li>
@@ -493,11 +524,29 @@
             <li><strong>damage</strong>: 追加ダメージを与える</li>
             <li><strong>heal</strong>: 自分または味方のHPを回復</li>
             <li><strong>buff_atk / buff_def</strong>: 攻撃力・防御力を上昇</li>
+            <li><strong>buff_hp</strong>: 最大HPおよび現在HPを一時的に上昇（割合/実数値の両方に対応）</li>
+            <li><strong>buff_spd</strong>: 素早さを一時的に上昇（割合/実数値の両方に対応）。行動順に即座に反映</li>
             <li><strong>debuff_def</strong>: 相手の防御力を低下</li>
             <li><strong>damage_up</strong>: 相手の被ダメージを上昇させるデバフ</li>
             <li><strong>stun</strong>: 相手をスタン状態にする（行動不可）</li>
             <li><strong>combo</strong>: 連続攻撃で大ダメージ</li>
-            <li><strong>lifesteal</strong>: ダメージの半分をHP吸収</li>
+            <li><strong>lifesteal</strong>: ダメージの一部をHP吸収</li>
+          </ul>
+          <h4 style="margin-top:12px; color:var(--accent-color); font-size:0.9rem;">スキルコスト</h4>
+          <ul class="rules-list">
+            <li><strong>全スキル共通</strong>: 消費ポイント上限は<strong>190pt</strong></li>
+            <li><strong>バフ・デバフ系 (buff_atk, buff_def, buff_hp, buff_spd, debuff_def等)</strong>: コスト下限は<strong>110pt</strong>。範囲: 110pt〜190pt</li>
+            <li><strong>その他スキル</strong>: コスト下限は80pt。範囲: 80pt〜190pt</li>
+          </ul>
+          <h4 style="margin-top:12px; color:var(--accent-color); font-size:0.9rem;">属性相性</h4>
+          <ul class="rules-list">
+            <li><strong>属性相性ボーナス</strong>: 攻撃者の属性が守備者の属性に有利な場合、ダメージが<strong>1.5倍</strong>になります</li>
+            <li>属性はキャラ作成時に選択可能。6つの属性の名前・カラー・相性は自由にカスタマイズできます</li>
+          </ul>
+          <h4 style="margin-top:12px; color:var(--accent-color); font-size:0.9rem;">泥沼戦演出</h4>
+          <ul class="rules-list">
+            <li><strong>30ターン突破</strong>: BGMのテンポが1.2倍に加速</li>
+            <li><strong>40ターン突破</strong>: 絶望感のある決戦BGMへ切り替え。全員のATKが1.5倍になり、回復量が半減して強制決着を促します</li>
           </ul>
           <p style="margin-top:10px;"><strong>重要:</strong> 特殊能力が発動したターンは、必殺技や通常攻撃はキャンセルされ、スキルの効果のみが処理されます（計算バグ防止）。</p>
           <p style="margin-top:8px;"><strong>役職制約:</strong> ヒーラーには攻撃系スキル（damage, combo, lifesteal, stun）が割り当てられません。AIは選択された役職の制約に従ったスキルのみを生成します。</p>
@@ -543,6 +592,18 @@
         <div class="form-group">
           <label>タグ</label>
           <input type="text" id="edit-char-tags" class="input-lg">
+        </div>
+        <div class="form-group">
+          <label>🔮 属性</label>
+          <select id="edit-char-element" class="input-lg" onchange="onElementSelectChange('edit-')">
+            <option value="">属性なし</option>
+          </select>
+          <input type="hidden" id="edit-char-element-color" value="">
+        </div>
+        <div class="form-group">
+          <label>🎨 属性システム設定</label>
+          <div id="edit-element-config-container" class="element-config-grid"></div>
+          <div id="edit-element-affinity-container" class="element-affinity-list"></div>
         </div>
         <div class="form-group">
           <label>見た目・外見</label>
@@ -600,8 +661,8 @@
           </div>
           <div class="stat-row">
             <div class="stat-label">
-              <span>🛡️ 防御力 (DEF)</span>
-              <span class="stat-value-display" id="edit-val-def">0 pt</span>
+              <span>🛡️ 防御力 (DEF / 1pt=2.5DEF)</span>
+              <span class="stat-value-display" id="edit-val-def">0 DEF (0 pt)</span>
             </div>
             <div class="stat-inputs">
               <input type="range" id="edit-stat-def" min="0" max="200" value="0" class="stat-slider" oninput="syncStat('edit-stat-def', 'edit-num-stat-def')">

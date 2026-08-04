@@ -66,6 +66,8 @@ function switchTab(tabId, event) {
 
   if (tabId === 'create' && typeof renderRoleSelector === 'function') renderRoleSelector('');
   if (tabId === 'create' && typeof renderTagChips === 'function') renderTagChips();
+  if (tabId === 'create' && typeof renderElementConfigUI === 'function') renderElementConfigUI('');
+  if (tabId === 'create' && typeof renderElementSelectOptions === 'function') renderElementSelectOptions('');
   if (tabId === 'gallery' && typeof renderTagChips === 'function') renderTagChips();
   if (tabId === 'battle' && typeof renderTeamSlots === 'function') renderTeamSlots();
   if (tabId === 'settings') {
@@ -135,7 +137,7 @@ function setupStatSync(prefix = '', isEdit = false) {
     const roleEl = document.getElementById(`${prefix}char-role`);
     const roleKey = roleEl ? roleEl.value : 'melee';
     if (atkEl) atkEl.textContent = roleKey === 'healer' ? `${currentValues['atk']} pt (回復力)` : `${currentValues['atk']} pt`;
-    if (defEl) defEl.textContent = `${currentValues['def']} pt`;
+    if (defEl) defEl.textContent = `${Math.floor(currentValues['def'] * 2.5)} DEF (${currentValues['def']} pt)`;
 
     const spdPt = currentValues['eva'];
     const evaRate = Math.min(30, Math.floor(spdPt * 0.2));
@@ -248,14 +250,17 @@ function renderSkillCandidates(candidates, prefix, selectedIndex) {
     card.className = 'skill-candidate-card' + (i === selectedIndex ? ' selected' : '');
     card.onclick = () => { if (typeof playSE === 'function') playSE('click'); selectSkillCandidate(i, prefix); };
     const valueTypeLabel = skill.valueType === 'percent' ? '%' : '';
+    const targetLine = `対象:${skill.target || '単体'}`;
+    const targetRangeLine = `対象範囲:${skill.targetRange || '単体'}`;
     const tags = [
-      `対象: ${skill.target || '単体'}`,
-      `確率: ${skill.probability || 100}%`,
-      `効果: ${skill.effectType || 'ダメージ'}`,
-      `効果量: ${skill.effectValue || 0}${valueTypeLabel}`,
-      `タイプ: ${skill.valueType === 'percent' ? '割合' : '固定'}`,
-      skill.duration ? `持続: ${skill.duration}T` : null,
-      `条件: ${skill.condition || '常時'}`
+      targetLine,
+      targetRangeLine,
+      `確率:${skill.probability || 100}%`,
+      `効果:${skill.effectType || 'ダメージ'}`,
+      `効果量:${skill.effectValue || 0}${valueTypeLabel}`,
+      `タイプ:${skill.valueType === 'percent' ? '割合' : '固定'}`,
+      skill.duration ? `持続:${skill.duration}T` : null,
+      `条件:${skill.condition || '常時'}`
     ].filter(t => t);
     card.innerHTML = `
       <div class="skill-candidate-header">
@@ -265,6 +270,10 @@ function renderSkillCandidates(candidates, prefix, selectedIndex) {
       <div class="skill-candidate-desc">${escapeHtml(skill.description || '')}</div>
       <div class="skill-candidate-meta">
         ${tags.map(t => `<span class="skill-candidate-tag">${escapeHtml(t)}</span>`).join('')}
+      </div>
+      <div class="skill-candidate-detail">
+        <div>効果対象: ${escapeHtml(skill.target || '単体')}</div>
+        <div>効果対象範囲: ${escapeHtml(skill.targetRange || '単体')}</div>
       </div>
     `;
     box.appendChild(card);
@@ -329,6 +338,8 @@ function getCharFormData(prefix = '') {
     job: document.getElementById(`${prefix}char-job`)?.value.trim() || '冒険者',
     role: roleKey,
     tags: tags,
+    element: document.getElementById(`${prefix}char-element`)?.value || '',
+    elementColor: document.getElementById(`${prefix}char-element-color`)?.value || '',
     appearance: document.getElementById(`${prefix}char-appearance`)?.value.trim() || '標準的な姿',
     bio: document.getElementById(`${prefix}char-bio`)?.value.trim() || '特筆なし',
     normalSkill: normalSkill,
@@ -338,7 +349,7 @@ function getCharFormData(prefix = '') {
       hp: hpPt * 5,
       maxHp: hpPt * 5,
       atk: atkPt,
-      def: defPt,
+      def: Math.floor(defPt * 2.5),
       spd: finalSpd,
       eva: finalSpd,
       evaRate: Math.min(30, Math.floor(finalSpd * 0.2))
@@ -385,6 +396,130 @@ function resetGalleryFilter() {
   if (typeof renderCharacterGallery === 'function') renderCharacterGallery();
 }
 
+/* ===================================================
+   属性システム
+   =================================================== */
+const ELEMENT_STORAGE_KEY = 'element_config';
+
+function getElementConfig() {
+  try {
+    const stored = localStorage.getItem(ELEMENT_STORAGE_KEY);
+    if (stored) return JSON.parse(stored);
+  } catch (e) {}
+  return {
+    names: ['炎', '水', '風', '土', '光', '闇'],
+    colors: ['#ef4444', '#3b82f6', '#10b981', '#a16207', '#facc15', '#7c3aed'],
+    affinities: { '炎': '風', '風': '土', '土': '水', '水': '炎', '光': '闇', '闇': '光' }
+  };
+}
+
+function saveElementConfig(config) {
+  localStorage.setItem(ELEMENT_STORAGE_KEY, JSON.stringify(config));
+}
+
+function renderElementConfigUI(prefix) {
+  const container = document.getElementById(`${prefix}element-config-container`);
+  if (!container) return;
+  const config = getElementConfig();
+  container.innerHTML = '';
+  for (let i = 0; i < 6; i++) {
+    const row = document.createElement('div');
+    row.className = 'element-config-row';
+    const name = config.names[i] || '';
+    const color = config.colors[i] || '#ffffff';
+    row.innerHTML = `
+      <input type="text" class="element-name-input" value="${escapeHtml(name)}" placeholder="属性${i+1}" data-elem-index="${i}" onchange="updateElementConfig(${i}, 'name', this.value)">
+      <input type="color" class="element-color-input" value="${color}" data-elem-index="${i}" onchange="updateElementConfig(${i}, 'color', this.value)">
+    `;
+    container.appendChild(row);
+  }
+  renderElementAffinityUI(prefix);
+}
+
+function renderElementAffinityUI(prefix) {
+  const container = document.getElementById(`${prefix}element-affinity-container`);
+  if (!container) return;
+  const config = getElementConfig();
+  container.innerHTML = '';
+  config.names.forEach((name, i) => {
+    if (!name) return;
+    const row = document.createElement('div');
+    row.className = 'element-affinity-row';
+    const currentTarget = config.affinities[name] || '';
+    const options = config.names.filter(n => n && n !== name).map(n =>
+      `<option value="${escapeHtml(n)}" ${n === currentTarget ? 'selected' : ''}>${escapeHtml(n)}</option>`
+    ).join('');
+    row.innerHTML = `
+      <span class="element-affinity-label" style="color:${config.colors[i]}">${escapeHtml(name)}</span>
+      <span>は</span>
+      <select class="formation-select" onchange="updateElementAffinity('${escapeHtml(name)}', this.value)">${options}</select>
+      <span>に強い (1.5倍)</span>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function updateElementConfig(index, field, value) {
+  const config = getElementConfig();
+  const oldName = config.names[index];
+  if (field === 'name') {
+    config.names[index] = value.trim();
+    if (oldName && oldName !== value.trim() && config.affinities[oldName]) {
+      config.affinities[value.trim()] = config.affinities[oldName];
+      delete config.affinities[oldName];
+    }
+  } else if (field === 'color') {
+    config.colors[index] = value;
+  }
+  saveElementConfig(config);
+  renderElementConfigUI('');
+  renderElementConfigUI('edit-');
+  if (typeof playSE === 'function') playSE('click');
+}
+
+function updateElementAffinity(elementName, targetName) {
+  const config = getElementConfig();
+  config.affinities[elementName] = targetName;
+  saveElementConfig(config);
+  if (typeof playSE === 'function') playSE('click');
+}
+
+function setElementPreset(presetKey) {
+  const presets = {
+    'basic': { names: ['炎', '水', '風', '土', '光', '闇'], colors: ['#ef4444', '#3b82f6', '#10b981', '#a16207', '#facc15', '#7c3aed'], affinities: { '炎': '風', '風': '土', '土': '水', '水': '炎', '光': '闇', '闇': '光' } },
+    'seasonal': { names: ['春', '夏', '秋', '冬', '朝', '夜'], colors: ['#f472b6', '#facc15', '#f97316', '#3b82f6', '#fde68a', '#1e293b'], affinities: { '春': '冬', '夏': '春', '秋': '夏', '冬': '秋', '朝': '夜', '夜': '朝' } },
+    'metal': { names: ['金', '銀', '銅', '鉄', 'プラチナ', 'ルビー'], colors: ['#facc15', '#c0c0c0', '#cd7f32', '#6b7280', '#e5e4e2', '#dc2626'], affinities: { '金': '銀', '銀': '銅', '銅': '鉄', '鉄': '金', 'プラチナ': 'ルビー', 'ルビー': 'プラチナ' } },
+    'magic': { names: ['火', '水', '雷', '氷', '聖', '魔'], colors: ['#ef4444', '#3b82f6', '#facc15', '#67e8f9', '#fde68a', '#a855f7'], affinities: { '火': '氷', '氷': '雷', '雷': '水', '水': '火', '聖': '魔', '魔': '聖' } }
+  };
+  const preset = presets[presetKey];
+  if (!preset) return;
+  saveElementConfig(preset);
+  renderElementConfigUI('');
+  renderElementConfigUI('edit-');
+  renderElementSelectOptions('');
+  renderElementSelectOptions('edit-');
+  if (typeof playSE === 'function') playSE('click');
+}
+
+function renderElementSelectOptions(prefix) {
+  const select = document.getElementById(`${prefix}char-element`);
+  if (!select) return;
+  const config = getElementConfig();
+  select.innerHTML = '<option value="">属性なし</option>' +
+    config.names.filter(n => n).map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+}
+
+function onElementSelectChange(prefix) {
+  const select = document.getElementById(`${prefix}char-element`);
+  const colorInput = document.getElementById(`${prefix}char-element-color`);
+  if (!select || !colorInput) return;
+  const config = getElementConfig();
+  const idx = config.names.indexOf(select.value);
+  if (idx >= 0 && config.colors[idx]) {
+    colorInput.value = config.colors[idx];
+  }
+}
+
 function filterGallery() {
   if (typeof renderCharacterGallery === 'function') renderCharacterGallery();
 }
@@ -419,8 +554,9 @@ function renderTeamSlots() {
     for (let i = 0; i < MAX_TEAM_SIZE; i++) {
       const charId = teamArr[i];
       const slot = document.createElement('div');
-      slot.className = 'team-slot';
-      const autoFormation = i < 5 ? '前衛' : '後衛';
+      const isFront = i < 5;
+      const autoFormation = isFront ? '前衛' : '後衛';
+      slot.className = 'team-slot ' + (isFront ? 'team-slot-front' : 'team-slot-back');
 
       if (charId) {
         const charList = getCharList();
@@ -428,10 +564,11 @@ function renderTeamSlots() {
         if (char) {
           slot.classList.add('team-slot-filled');
           const roleLabel = (typeof getRoleLabel === 'function') ? getRoleLabel(char.role) : '';
+          const elemBadge = char.element ? `<span class="team-slot-element" style="color:${char.elementColor || '#fff'}">${escapeHtml(char.element)}</span>` : '';
           slot.innerHTML = `
             <div class="team-slot-info">
               <span class="team-slot-name">${escapeHtml(char.name)}</span>
-              <span class="team-slot-role">${escapeHtml(roleLabel)} / ${autoFormation}</span>
+              <span class="team-slot-role">${escapeHtml(roleLabel)} / ${autoFormation} ${elemBadge}</span>
             </div>
             <button class="team-slot-remove" onclick="removeFromTeam('${team}', ${i})">✖</button>
           `;
@@ -442,7 +579,7 @@ function renderTeamSlots() {
         }
       } else {
         slot.classList.add('team-slot-empty');
-        slot.innerHTML = `<button class="team-slot-add" onclick="openCharSelectModal('${team}', ${i})">＋ 追加</button>`;
+        slot.innerHTML = `<button class="team-slot-add" onclick="openCharSelectModal('${team}', ${i})">＋<br><span class="team-slot-pos">${autoFormation}</span></button>`;
       }
 
       container.appendChild(slot);
@@ -642,6 +779,19 @@ function toggleAccordion(bodyId) {
   body.style.display = body.style.display === 'none' ? 'block' : 'none';
 }
 
+function togglePasswordVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '👁️‍🗨️';
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁️';
+  }
+  if (typeof playSE === 'function') playSE('click');
+}
+
 /* ===================================================
    役職カードセレクター
    =================================================== */
@@ -673,7 +823,24 @@ function selectRole(roleKey, prefix = '') {
   if (hiddenInput) hiddenInput.value = roleKey;
   renderRoleSelector(prefix);
   if (typeof applyRoleFormRestrictions === 'function') applyRoleFormRestrictions(prefix);
+  validateSkillOnRoleChange(prefix);
   if (typeof playSE === 'function') playSE('click');
+}
+
+function validateSkillOnRoleChange(prefix) {
+  const isEdit = prefix === 'edit-';
+  const skill = isEdit ? selectedEditSkillData : selectedSkillData;
+  if (!skill) return;
+  const roleEl = document.getElementById(`${prefix}char-role`);
+  const roleKey = roleEl ? roleEl.value : 'melee';
+  const attackTypes = ['damage', 'combo', 'lifesteal', 'stun'];
+  const isHealer = roleKey === 'healer';
+
+  if (isHealer && attackTypes.includes(skill.effectType)) {
+    if (!confirm('役職をヒーラーに変更しましたが、現在の特殊能力は攻撃系スキルです。ヒーラーは攻撃スキルを使用できません。\n特殊能力をリセットしますか？')) return;
+    clearSkillSelection(prefix);
+    alert('特殊能力をリセットしました。再度スキルを設定してください。');
+  }
 }
 
 function resetAllData() {
@@ -756,17 +923,20 @@ function renderCharacterGallery() {
 
     const roleLabel = (typeof getRoleLabel === 'function') ? getRoleLabel(c.role) : '';
     const favStar = isFavorite(c.id) ? '★' : '☆';
+    const favClass = isFavorite(c.id) ? 'char-card-fav-active' : '';
+    const elemBadge = c.element ? `<span class="char-card-element-badge" style="border-color:${c.elementColor || '#fff'};color:${c.elementColor || '#fff'}">${escapeHtml(c.element)}</span>` : '';
     const card = document.createElement('div');
     card.className = 'char-card';
+    if (c.elementColor) card.style.borderColor = c.elementColor;
     card.innerHTML = `
       <div class="char-card-header">
         <div class="char-card-name-row">
           <h3 class="char-card-name">${escapeHtml(c.name)}</h3>
           <span class="char-card-job">${escapeHtml(c.job || '冒険者')}</span>
         </div>
-        <span class="char-card-fav" onclick="event.stopPropagation(); toggleFavorite('${c.id}')">${favStar}</span>
+        <span class="char-card-fav ${favClass}" onclick="event.stopPropagation(); toggleFavorite('${c.id}')">${favStar}</span>
       </div>
-      <div class="char-card-tags">${tagBadges || '<span class="tag-empty">タグなし</span>'} <span class="char-card-type-badge">${escapeHtml(roleLabel)}</span></div>
+      <div class="char-card-tags">${tagBadges || '<span class="tag-empty">タグなし</span>'} <span class="char-card-type-badge">${escapeHtml(roleLabel)}</span> ${elemBadge}</div>
       <div class="char-card-stats">
         <div class="stat-bar-wrap">
           <span class="stat-bar-label">❤️ HP</span>

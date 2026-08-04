@@ -419,10 +419,39 @@ textarea.input-lg { resize: vertical; }
 /* お気に入り星 */
 .char-card-fav { font-size: 1.3rem; cursor: pointer; color: var(--text-sub); transition: color 0.2s, transform 0.15s; user-select: none; }
 .char-card-fav:hover { color: var(--accent-color); transform: scale(1.2); }
+.char-card-fav-active { color: #FFD700 !important; text-shadow: 0 0 6px rgba(255,215,0,0.5); }
 .char-card-type-badge { font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 12px; background: rgba(14,165,233,0.15); color: var(--action-color); border: 1px solid rgba(14,165,233,0.3); margin-left: auto; }
+.char-card-element-badge { font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 12px; border: 1px solid; margin-left: 4px; }
 
-/* APIガイドアコーディオン */
-.api-guide-accordion { border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; }
+/* パスワード表示切替 */
+.password-input-wrap { position: relative; display: flex; align-items: center; }
+.password-input-wrap .input-lg { padding-right: 45px; }
+.password-toggle-btn { position: absolute; right: 8px; background: none; border: none; font-size: 1.2rem; cursor: pointer; padding: 4px; line-height: 1; opacity: 0.7; transition: opacity 0.2s; }
+.password-toggle-btn:hover { opacity: 1; }
+
+/* 属性システム */
+.element-config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-top: 8px; }
+.element-config-row { display: flex; gap: 6px; align-items: center; }
+.element-name-input { flex: 1; padding: 6px 10px; font-size: 0.85rem; background: var(--bg-color); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; }
+.element-color-input { width: 40px; height: 32px; padding: 0; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; background: none; }
+.element-preset-bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 0.8rem; color: var(--text-sub); margin-bottom: 8px; }
+.element-affinity-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.element-affinity-row { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-main); }
+.element-affinity-label { font-weight: 700; min-width: 40px; }
+
+/* 前衛・後衛スロット区別 */
+.team-slot-front { border-color: rgba(239, 68, 68, 0.4) !important; }
+.team-slot-back { border-color: rgba(59, 130, 246, 0.4) !important; }
+.team-slot-front.team-slot-empty { background: rgba(239, 68, 68, 0.05); }
+.team-slot-back.team-slot-empty { background: rgba(59, 130, 246, 0.05); }
+.team-slot-pos { font-size: 0.65rem; color: var(--text-sub); display: block; margin-top: 2px; }
+.team-slot-front .team-slot-pos { color: #f87171; }
+.team-slot-back .team-slot-pos { color: #60a5fa; }
+.team-slot-element { font-size: 0.68rem; margin-left: 4px; font-weight: 700; }
+
+/* スキル詳細（対象・対象範囲分離表示） */
+.skill-candidate-detail { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-color); display: flex; flex-direction: column; gap: 3px; font-size: 0.78rem; color: var(--text-sub); }
+.skill-candidate-detail div { line-height: 1.4; }
 .accordion-header { width: 100%; padding: 12px 15px; font-size: 0.9rem; font-weight: 700; background: rgba(0,0,0,0.2); border: none; color: var(--text-main); cursor: pointer; text-align: left; transition: background 0.2s; }
 .accordion-header:hover { background: rgba(0,0,0,0.35); }
 .accordion-body { padding: 15px; background: var(--bg-color); }
