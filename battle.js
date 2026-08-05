@@ -772,6 +772,7 @@ function runBattleSimulation() {
     const result = executeCustomSkill(f, null, f.customSkill, 1, 'on_battle_start');
     if (result.activated) {
       logs.push(`✨ [${f.team}] ${f.name} の「${result.skillName}」が戦闘開始時に発動！`);
+      vbEvents.push({ type: 'skill', turn: 0, casterId: f.id, casterName: f.name, skillName: result.skillName, isBattleStart: true });
       if (typeof playSE === 'function') playSE('skill');
       if (result.buffAtk > 0) {
         f.stats.atk = (f.stats.atk || 0) + result.buffAtk;
